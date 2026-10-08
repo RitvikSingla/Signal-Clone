@@ -1,0 +1,45 @@
+# --- Python -----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Database ---------------------------------------------------------
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# --- Uploaded media ---------------------------------------------------
+backend/media/*
+!backend/media/.gitkeep
+
+# --- Node / Next ------------------------------------------------------
+node_modules/
+.next/
+out/
+build/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Environment ------------------------------------------------------
+.env
+.env.local
+.env*.local
+!.env.example
+
+# --- Editors and OS ---------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs -------------------------------------------------------------
+*.log
+npm-debug.log*

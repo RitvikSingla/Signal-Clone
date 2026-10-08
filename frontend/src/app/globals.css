@@ -1,0 +1,210 @@
+@import "tailwindcss";
+
+/* Dark mode is driven by an explicit data-theme attribute so the settings
+   toggle can override the operating system. prefers-color-scheme supplies the
+   default when the attribute is absent. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ---------------------------------------------------------------------------
+   Signal design tokens, light theme.
+   Calibrated against Signal Desktop. No component may hard-code a colour;
+   everything reads these variables, which is what makes the dark theme a
+   token swap rather than a second set of classes.
+--------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --ultramarine: #3a76f0;
+  --ultramarine-hover: #2f68dd;
+  --ultramarine-soft: #e8effd;
+
+  /* Surfaces */
+  --surface: #ffffff;
+  --surface-raised: #f6f6f6;
+  --surface-sunken: #ededed;
+  --surface-rail: #f0f0f0;
+  --surface-overlay: #ffffff;
+  --surface-hover: #0000000a;
+
+  /* Lines */
+  --border: #e0e0e0;
+  --border-strong: #c9c9c9;
+
+  /* Text */
+  --ink: #1b1b1b;
+  --ink-2: #6b6b6b;
+  --ink-3: #8f8f8f;
+  --ink-inverse: #ffffff;
+
+  /* Message bubbles */
+  --bubble-in: #e9e9e9;
+  --bubble-in-ink: #1b1b1b;
+  --bubble-out: #3a76f0;
+  --bubble-out-ink: #ffffff;
+
+  /* State */
+  --danger: #d2303c;
+  --success: #3b8f4e;
+  --warning: #c97a16;
+
+  /* Avatar swatches. Signal assigns one per contact, keyed off the account. */
+  --a100: #cc4444;
+  --a110: #c6632f;
+  --a120: #a08444;
+  --a130: #4b8a3e;
+  --a140: #2f8c6e;
+  --a150: #337c8f;
+  --a160: #3a76bb;
+  --a170: #7a5fc4;
+  --a180: #a8519b;
+  --a190: #8b6a63;
+  --a200: #6b7280;
+  --a210: #3a76f0;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ultramarine: #4b81f2;
+  --ultramarine-hover: #5e8ff4;
+  --ultramarine-soft: #1c2740;
+
+  --surface: #1b1b1b;
+  --surface-raised: #121212;
+  --surface-sunken: #0d0d0d;
+  --surface-rail: #121212;
+  --surface-overlay: #262626;
+  --surface-hover: #ffffff0f;
+
+  --border: #3b3b3b;
+  --border-strong: #4f4f4f;
+
+  --ink: #f0f0f0;
+  --ink-2: #b9b9b9;
+  --ink-3: #8f8f8f;
+  --ink-inverse: #1b1b1b;
+
+  --bubble-in: #2e2e2e;
+  --bubble-in-ink: #f0f0f0;
+  --bubble-out: #3a76f0;
+  --bubble-out-ink: #ffffff;
+
+  --danger: #e8606b;
+  --success: #5cb270;
+  --warning: #e0a04a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --ultramarine: #4b81f2;
+    --ultramarine-hover: #5e8ff4;
+    --ultramarine-soft: #1c2740;
+
+    --surface: #1b1b1b;
+    --surface-raised: #121212;
+    --surface-sunken: #0d0d0d;
+    --surface-rail: #121212;
+    --surface-overlay: #262626;
+    --surface-hover: #ffffff0f;
+
+    --border: #3b3b3b;
+    --border-strong: #4f4f4f;
+
+    --ink: #f0f0f0;
+    --ink-2: #b9b9b9;
+    --ink-3: #8f8f8f;
+    --ink-inverse: #1b1b1b;
+
+    --bubble-in: #2e2e2e;
+    --bubble-in-ink: #f0f0f0;
+    --bubble-out: #3a76f0;
+    --bubble-out-ink: #ffffff;
+
+    --danger: #e8606b;
+    --success: #5cb270;
+    --warning: #e0a04a;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Expose the tokens to Tailwind as utilities: bg-surface, text-ink-2,
+   border-border, rounded-bubble, w-rail and so on.
+--------------------------------------------------------------------------- */
+@theme inline {
+  --color-ultramarine: var(--ultramarine);
+  --color-ultramarine-hover: var(--ultramarine-hover);
+  --color-ultramarine-soft: var(--ultramarine-soft);
+
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-rail: var(--surface-rail);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-inverse: var(--ink-inverse);
+
+  --color-bubble-in: var(--bubble-in);
+  --color-bubble-in-ink: var(--bubble-in-ink);
+  --color-bubble-out: var(--bubble-out);
+  --color-bubble-out-ink: var(--bubble-out-ink);
+
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Signal Desktop metrics */
+  --radius-bubble: 18px;
+  --radius-bubble-tail: 4px;
+  --radius-composer: 24px;
+
+  --spacing-rail: 68px;
+  --spacing-list: 320px;
+  --spacing-list-min: 280px;
+  --spacing-list-max: 380px;
+  --spacing-row: 72px;
+  --spacing-thread: 720px;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Signal's scrollbars are thin and only visible against the list. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ultramarine);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
