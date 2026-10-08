@@ -29,7 +29,7 @@ someone else is in [`docs/Signal-Clone-Walkthrough.pdf`](docs/Signal-Clone-Walkt
 | 07 | Conversation list extras | Partly done |
 | 08 | Chat pane: typing, live receipts | Partly done |
 | 09 | Group admin UI | Partly done |
-| 10 | Settings and placeholders | Partly done |
+| 10 | Settings and placeholders | Done |
 | 11 | Bonus: attachments, disappearing | Not started |
 | 12 | Documentation and deploy | Not started |
 
@@ -216,6 +216,15 @@ generated from the same Pydantic models the handlers use.
 | ![Sign in](docs/screenshots/01-sign-in.png) | ![Welcome pane](docs/screenshots/02-welcome.png) |
 | ![Conversation list](docs/screenshots/03-conversation-list.png) | ![Group thread](docs/screenshots/04-group-thread.png) |
 | ![Details panel](docs/screenshots/06-details-panel.png) | ![Light theme](docs/screenshots/10-light-theme.png) |
+
+Calls, Stories and Settings are full two-pane screens rather than a single
+blank placeholder, because that is how the real app lays them out:
+
+| | |
+| --- | --- |
+| ![Calls](docs/screenshots/07-calls.png) | ![Stories](docs/screenshots/08-stories.png) |
+
+![Settings](docs/screenshots/11-settings.png)
 
 Mobile layout at 390px:
 

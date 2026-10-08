@@ -54,8 +54,8 @@ export function VideoIcon({ size = 22, className, strokeWidth = 1.7 }: IconProps
 export function StoriesIcon({ size = 22, className, strokeWidth = 1.7 }: IconProps) {
   return (
     <svg {...base(size, className)} strokeWidth={strokeWidth}>
-      <circle cx="12" cy="12" r="9" strokeDasharray="3.6 2.8" />
-      <circle cx="12" cy="12" r="3.4" />
+      <rect x="9" y="3.5" width="11" height="17" rx="3.2" />
+      <path d="M5 7.5v9" />
     </svg>
   );
 }
@@ -291,6 +291,115 @@ export function SignalMark({ size = 96, className }: { size?: number; className?
         d="M50 15C30.7 15 15 28.1 15 44.3c0 8.6 4.4 16.3 11.4 21.7l-4.6 16.4a1.6 1.6 0 0 0 2.2 1.9l19.3-8.4c2.2.3 4.4.5 6.7.5 19.3 0 35-13.1 35-29.4S69.3 15 50 15Z"
         fill="currentColor"
       />
+    </svg>
+  );
+}
+
+export function NewCallIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M20 16.6v2.2a1.8 1.8 0 0 1-2 1.8 17.8 17.8 0 0 1-7.7-2.8 17.4 17.4 0 0 1-5.4-5.4A17.8 17.8 0 0 1 2.1 4.7 1.8 1.8 0 0 1 3.9 2.7h2.2a1.8 1.8 0 0 1 1.8 1.6c.1.9.3 1.7.6 2.5a1.8 1.8 0 0 1-.4 1.9l-1 1a14.4 14.4 0 0 0 5.4 5.4l1-1a1.8 1.8 0 0 1 1.9-.4c.8.3 1.6.5 2.5.6a1.8 1.8 0 0 1 1.6 1.8Z" />
+      <path d="M18 2v6M21 5h-6" />
+    </svg>
+  );
+}
+
+export function LinkIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7" />
+      <path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7" />
+    </svg>
+  );
+}
+
+export function PersonIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+    </svg>
+  );
+}
+
+export function AccountIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="10" r="2.8" />
+      <path d="M6.3 18.3a6.5 6.5 0 0 1 11.4 0" />
+    </svg>
+  );
+}
+
+export function PencilIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+export function AtIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <circle cx="12" cy="12" r="3.6" />
+      <path d="M15.6 12v1.4a2.7 2.7 0 0 0 5.4 0V12a9 9 0 1 0-3.5 7.1" />
+    </svg>
+  );
+}
+
+export function HeartIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M12 20.3 4.6 13a4.8 4.8 0 0 1 6.8-6.8l.6.6.6-.6A4.8 4.8 0 1 1 19.4 13Z" />
+    </svg>
+  );
+}
+
+export function BellIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M18 9a6 6 0 1 0-12 0c0 4-1.5 5.5-1.5 5.5h15S18 13 18 9Z" />
+      <path d="M13.7 18a2 2 0 0 1-3.4 0" />
+    </svg>
+  );
+}
+
+export function AppearanceIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 3a9 9 0 0 1 0 18Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function SlidersIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
+    </svg>
+  );
+}
+
+export function DataIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 12V5.5a6.5 6.5 0 0 1 5.6 9.8Z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function BackupIcon({ size = 20, className, strokeWidth = 1.7 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />
+      <path d="M3 4v4.5h4.5" />
+      <path d="M12 8v4.4l3 1.8" />
     </svg>
   );
 }

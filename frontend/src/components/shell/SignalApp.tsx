@@ -17,11 +17,11 @@ import { useCallback, useEffect, useState } from "react";
 import { ChatPane } from "@/components/chat/ChatPane";
 import { ConversationInfo } from "@/components/conversations/ConversationInfo";
 import { ConversationList } from "@/components/conversations/ConversationList";
-import { ComingSoon } from "@/components/shell/ComingSoon";
+import { CallsPane } from "@/components/shell/CallsPane";
+import { StoriesPane } from "@/components/shell/StoriesPane";
 import { NavRail, type RailTab } from "@/components/shell/NavRail";
 import { NewChatModal } from "@/components/shell/NewChatModal";
 import { SettingsPane } from "@/components/shell/SettingsPane";
-import { PhoneIcon, StoriesIcon } from "@/components/ui/Icons";
 import type { MenuItem } from "@/components/ui/Menu";
 import { useToasts } from "@/components/ui/Toasts";
 import { useChat } from "@/store/chat";
@@ -70,7 +70,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   );
 
   const comingSoon = useCallback(
-    (feature: string) => push(`${feature} are not part of this build yet.`),
+    (feature: string) => push(`${feature} are a placeholder in this build.`),
     [push],
   );
 
@@ -187,21 +187,11 @@ export function SignalApp({ user }: { user: UserPrivate }) {
         </>
       )}
 
-      {tab === "calls" && (
-        <ComingSoon
-          title="Calls"
-          description="Voice and video calling is a placeholder in this build, as the assignment permits. Messaging, groups and receipts are fully implemented."
-          icon={<PhoneIcon size={28} />}
-        />
-      )}
+      {/* Calls, Stories and Settings are each a pane pair of their own, the
+          way the real app lays them out, rather than one blank placeholder. */}
+      {tab === "calls" && <CallsPane onComingSoon={comingSoon} />}
 
-      {tab === "stories" && (
-        <ComingSoon
-          title="Stories"
-          description="Stories are a placeholder in this build. The conversation and group features are the focus."
-          icon={<StoriesIcon size={28} />}
-        />
-      )}
+      {tab === "stories" && <StoriesPane user={user} onComingSoon={comingSoon} />}
 
       {tab === "settings" && <SettingsPane user={user} />}
 
