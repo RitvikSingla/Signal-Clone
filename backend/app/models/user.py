@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
+from app.db.types import UtcDateTime
 from app.models.enums import DevicePlatform
 
 if TYPE_CHECKING:
@@ -44,7 +45,7 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     #: Written by the WebSocket hub on connect and disconnect, not faked.
     is_online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     # --- relationships --------------------------------------------------
@@ -83,10 +84,10 @@ class Device(UUIDPrimaryKeyMixin, Base):
     platform: Mapped[DevicePlatform] = mapped_column(String(16))
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_active_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     user: Mapped[User] = relationship(back_populates="devices")
@@ -113,7 +114,7 @@ class Contact(UUIDPrimaryKeyMixin, Base):
     nickname: Mapped[str | None] = mapped_column(String(64))
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     owner: Mapped[User] = relationship(back_populates="contacts", foreign_keys=[owner_id])

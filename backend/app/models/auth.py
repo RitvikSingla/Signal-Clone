@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, UUIDPrimaryKeyMixin, utcnow
+from app.db.types import UtcDateTime
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -29,10 +30,10 @@ class AuthSession(UUIDPrimaryKeyMixin, Base):
     )
     refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     user_agent: Mapped[str | None] = mapped_column(String(255))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     user: Mapped[User] = relationship(back_populates="sessions")
@@ -55,10 +56,10 @@ class PhoneVerification(UUIDPrimaryKeyMixin, Base):
     phone_number: Mapped[str] = mapped_column(String(20), index=True)
     code: Mapped[str] = mapped_column(String(8))
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
+    consumed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     @property

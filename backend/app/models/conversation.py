@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
-    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -24,6 +23,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
+from app.db.types import UtcDateTime
 from app.models.enums import ConversationType, MemberRole
 
 if TYPE_CHECKING:
@@ -86,7 +86,7 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("messages.id", ondelete="SET NULL", use_alter=True)
     )
     last_activity_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     members: Mapped[list[ConversationMember]] = relationship(
@@ -133,10 +133,10 @@ class ConversationMember(UUIDPrimaryKeyMixin, Base):
     role: Mapped[MemberRole] = mapped_column(String(10), default=MemberRole.MEMBER)
 
     joined_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
     #: Soft leave. History stays attributable to someone who has left.
-    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    left_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     #: The read cursor. Unread count is derived by counting messages created
     #: after this one, so opening a thread is a single-row update no matter
@@ -145,7 +145,7 @@ class ConversationMember(UUIDPrimaryKeyMixin, Base):
         ForeignKey("messages.id", ondelete="SET NULL", use_alter=True)
     )
 
-    muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    muted_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
-    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -26,6 +25,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, UUIDPrimaryKeyMixin, utcnow
+from app.db.types import UtcDateTime
 from app.models.enums import MessageStatus, MessageType
 
 if TYPE_CHECKING:
@@ -87,14 +87,14 @@ class Message(UUIDPrimaryKeyMixin, Base):
     #: Supplied by the client before the request leaves the browser.
     client_id: Mapped[str] = mapped_column(String(36))
 
-    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    edited_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     #: Soft delete. The row stays so the thread can render a tombstone.
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     #: Set at insert time when the thread has a timer running.
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     conversation: Mapped[Conversation] = relationship(
@@ -140,9 +140,9 @@ class MessageReceipt(UUIDPrimaryKeyMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     #: Written when the recipient's socket acknowledges arrival.
-    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    delivered_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     #: Written when that member's read cursor passes this message.
-    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    read_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     message: Mapped[Message] = relationship(back_populates="receipts")
     user: Mapped[User] = relationship()
@@ -168,7 +168,7 @@ class Reaction(UUIDPrimaryKeyMixin, Base):
     )
     emoji: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     message: Mapped[Message] = relationship(back_populates="reactions")
@@ -204,7 +204,7 @@ class Attachment(UUIDPrimaryKeyMixin, Base):
     thumbnail_path: Mapped[str | None] = mapped_column(String(512))
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
 
     message: Mapped[Message | None] = relationship(back_populates="attachments")

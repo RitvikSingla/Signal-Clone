@@ -8,8 +8,10 @@ it once here means every migration can reference constraints by name.
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import DateTime, MetaData, String
+from sqlalchemy import MetaData, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.db.types import UtcDateTime
 
 NAMING_CONVENTION = {
     "ix": "ix_%(table_name)s_%(column_0_name)s",
@@ -40,8 +42,8 @@ class UUIDPrimaryKeyMixin:
 
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, nullable=False
+        UtcDateTime, default=utcnow, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        UtcDateTime, default=utcnow, onupdate=utcnow, nullable=False
     )
