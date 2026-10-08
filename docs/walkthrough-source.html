@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Signal Clone — Project Walkthrough</title>
+<style>
+@page { size: A4; margin: 17mm 15mm 16mm; }
+
+:root {
+  --ink: #16181d;
+  --ink-2: #474f5c;
+  --ink-3: #727b89;
+  --rule: #d4dae4;
+  --rule-soft: #e8ecf3;
+  --accent: #2f63cc;
+  --accent-soft: #eaf0fc;
+  --panel: #f5f7fb;
+  --ok: #1d6b4f;
+  --warn: #8a5a00;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #fff;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 9.6pt;
+  line-height: 1.55;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+h1, h2, h3, h4 { font-family: Georgia, "Times New Roman", serif; }
+
+/* ---------- cover ---------- */
+.cover {
+  height: 252mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  page-break-after: always;
+}
+.cover-top .eyebrow {
+  font-size: 7.6pt; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 10mm;
+}
+.cover h1 {
+  font-size: 34pt; line-height: 1.04; margin: 0; letter-spacing: -.015em; font-weight: 700;
+}
+.cover .sub {
+  font-size: 12pt; color: var(--ink-2); margin: 6mm 0 0; max-width: 125mm; line-height: 1.45;
+}
+.cover .rule { height: 3px; background: var(--accent); width: 46mm; margin: 9mm 0 0; }
+.cover-meta {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 7mm 10mm;
+  border-top: 1px solid var(--rule); padding-top: 6mm;
+}
+.cover-meta dt {
+  font-size: 7.2pt; letter-spacing: .13em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 1.5mm;
+}
+.cover-meta dd { margin: 0; font-size: 9.4pt; font-weight: 600; }
+.cover-note {
+  margin-top: 7mm; font-size: 8.4pt; color: var(--ink-3); border-top: 1px solid var(--rule-soft); padding-top: 4mm;
+}
+
+/* ---------- sections ---------- */
+section { page-break-before: always; }
+section.first { page-break-before: avoid; }
+
+h2 {
+  font-size: 17pt; margin: 0 0 1.5mm; letter-spacing: -.01em; font-weight: 700;
+}
+.secnum {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 7.6pt; letter-spacing: .16em; color: var(--accent);
+  text-transform: uppercase; margin: 0 0 2.5mm; font-weight: 700;
+}
+.deck { color: var(--ink-2); font-size: 10pt; margin: 0 0 6mm; max-width: 150mm; }
+h3 {
+  font-size: 11pt; margin: 7mm 0 2.5mm; font-weight: 700;
+}
+h4 {
+  font-size: 9.4pt; margin: 5mm 0 1.5mm; font-weight: 700; font-family: "Segoe UI", sans-serif;
+}
+p { margin: 0 0 3mm; max-width: 165mm; }
+ul, ol { margin: 0 0 3mm; padding-left: 5.5mm; }
+li { margin-bottom: 1.4mm; }
+strong { font-weight: 600; }
+code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: .9em; background: var(--panel); padding: .4mm 1.2mm; border-radius: 2px;
+  border: 1px solid var(--rule-soft);
+}
+
+/* ---------- tables ---------- */
+table { width: 100%; border-collapse: collapse; margin: 0 0 4mm; font-size: 8.4pt; }
+caption {
+  caption-side: top; text-align: left; font-size: 7.4pt; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3); padding-bottom: 1.5mm; font-weight: 600;
+}
+th {
+  text-align: left; font-size: 7.2pt; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--ink-3); border-bottom: 1.2px solid var(--ink); padding: 1.6mm 2.4mm 1.6mm 0; font-weight: 600;
+}
+td { padding: 1.5mm 2.4mm 1.5mm 0; border-bottom: .6px solid var(--rule-soft); vertical-align: top; }
+tr { page-break-inside: avoid; }
+td.mono, th.mono { font-family: Consolas, "Courier New", monospace; font-size: 7.9pt; }
+td.c1 { font-family: Consolas, "Courier New", monospace; font-size: 7.9pt; white-space: nowrap; font-weight: 600; }
+td.c2 { font-family: Consolas, "Courier New", monospace; font-size: 7.2pt; color: var(--ink-3); white-space: nowrap; }
+td.c3 { color: var(--ink-2); }
+
+/* ---------- schema card ---------- */
+.tblock { page-break-inside: avoid; margin-bottom: 5mm; }
+.tblock > .th {
+  display: flex; align-items: baseline; gap: 3mm; flex-wrap: wrap;
+  border-left: 2.5px solid var(--accent); padding-left: 3mm; margin-bottom: 2mm;
+}
+.tblock .tn { font-family: Consolas, monospace; font-size: 9.6pt; font-weight: 700; color: var(--accent); }
+.tblock .tp { font-size: 8.4pt; color: var(--ink-2); }
+
+/* ---------- misc blocks ---------- */
+pre {
+  font-family: Consolas, "Courier New", monospace; font-size: 7.8pt; line-height: 1.6;
+  background: var(--panel); border: .6px solid var(--rule); border-radius: 3px;
+  padding: 3mm 4mm; margin: 0 0 4mm; white-space: pre; overflow: visible;
+  page-break-inside: avoid;
+}
+.note {
+  border-left: 2.5px solid var(--accent); background: var(--accent-soft);
+  padding: 3mm 4mm; margin: 0 0 4mm; font-size: 8.8pt; color: var(--ink-2);
+  page-break-inside: avoid;
+}
+.note strong { color: var(--ink); }
+
+.qa { page-break-inside: avoid; margin-bottom: 4.5mm; }
+.qa .q { font-weight: 700; font-size: 9.4pt; margin-bottom: 1.2mm; }
+.qa .a { color: var(--ink-2); font-size: 9.2pt; margin: 0; }
+
+.kv { display: grid; grid-template-columns: 42mm 1fr; gap: 1.6mm 5mm; font-size: 8.8pt; margin-bottom: 4mm; }
+.kv .k { color: var(--ink-3); }
+.kv .v { color: var(--ink); }
+
+.cols2 { column-count: 2; column-gap: 9mm; }
+.cols2 ul { margin-top: 0; }
+
+.pill {
+  display: inline-block; font-family: Consolas, monospace; font-size: 6.8pt; font-weight: 700;
+  letter-spacing: .07em; text-transform: uppercase; padding: .6mm 1.8mm; border-radius: 2px;
+  vertical-align: middle;
+}
+.pill.done { background: #e2f1ea; color: var(--ok); }
+.pill.next { background: var(--accent-soft); color: var(--accent); }
+.pill.todo { background: #f0f2f6; color: var(--ink-3); }
+
+.phase { page-break-inside: avoid; display: grid; grid-template-columns: 9mm 1fr; gap: 0 3mm; padding: 2.4mm 0; border-top: .6px solid var(--rule-soft); }
+.phase .n { font-family: Consolas, monospace; font-size: 8.4pt; font-weight: 700; color: var(--accent); }
+.phase .t { font-weight: 700; font-size: 9.2pt; }
+.phase .g { font-size: 8.4pt; color: var(--ink-2); margin-top: .8mm; }
+.phase .g b { font-family: Consolas, monospace; font-size: 6.8pt; letter-spacing: .08em; text-transform: uppercase; color: var(--ok); }
+
+footer.endnote {
+  margin-top: 8mm; padding-top: 3mm; border-top: 1px solid var(--rule);
+  font-size: 8pt; color: var(--ink-3);
+}
+</style>
+</head>
+<body>
+
+<!-- ================= COVER ================= -->
+<div class="cover">
+  <div class="cover-top">
+    <p class="eyebrow">Scaler SDE Fullstack Assignment</p>
+    <h1>Signal Clone</h1>
+    <p class="sub">A secure-messaging platform reproducing Signal's layout, conversation model and real-time behaviour. Encryption is simulated. Everything else is real, persisted and wired end to end.</p>
+    <div class="rule"></div>
+  </div>
+  <div>
+    <dl class="cover-meta">
+      <div><dt>Frontend</dt><dd>Next.js 16, TypeScript, Tailwind v4</dd></div>
+      <div><dt>Backend</dt><dd>FastAPI, SQLAlchemy 2.0, Alembic</dd></div>
+      <div><dt>Database</dt><dd>SQLite, WAL mode, FTS5</dd></div>
+      <div><dt>Real time</dt><dd>Native WebSocket, JWT handshake</dd></div>
+      <div><dt>Scope</dt><dd>5 of 13 phases complete</dd></div>
+      <div><dt>Document date</dt><dd>8 October 2026</dd></div>
+    </dl>
+    <p class="cover-note">This document is a walkthrough, not a specification. It is written so the reader can explain every decision in the project to someone who has not seen the code: what was built, why that option was chosen over the alternative, and how to verify each claim. Phases 0 through 3 and phase 5 are complete; section 7 lists what each delivered and the evidence for it.</p>
+  </div>
+</div>
+
+<!-- ================= 1. BRIEF ================= -->
+<section class="first">
+  <p class="secnum">01 — The brief</p>
+  <h2>What was asked for, and what that actually means</h2>
+  <p class="deck">The assignment asks for a functional clone of Signal: registration, contacts, one-to-one and group conversations, and real-time messaging, inside an interface that looks and behaves like the real app.</p>
+
+  <h3>The required feature set</h3>
+  <table>
+    <tr><th style="width:38mm">Area</th><th>What must work</th></tr>
+    <tr><td><strong>Authentication</strong></td><td>Register by phone number or username with a mocked verification code, set a display name and avatar, sign in and out, and keep the session across a refresh.</td></tr>
+    <tr><td><strong>Conversation list</strong></td><td>Threads sorted by most recent activity, search across conversations and contacts, add a contact, unread badges with a last-message preview, and online or last-seen state.</td></tr>
+    <tr><td><strong>Direct messaging</strong></td><td>Real-time send and receive, timestamps, delivery and read receipts as the single and double check experience, typing indicators, the four message statuses, and persistence of everything.</td></tr>
+    <tr><td><strong>Group messaging</strong></td><td>Create a group with a name and members, send and receive, view the member list, add and remove members under admin control, and persist all of it.</td></tr>
+    <tr><td><strong>Signal experience</strong></td><td>Matching navigation, bubbles and threading, forms, modals, search and filters, toasts, and settings placeholders.</td></tr>
+  </table>
+
+  <h3>What may be mocked</h3>
+  <p>The brief explicitly permits simulating four things: voice and video calls, stories, linked devices, and end-to-end encryption. These may be present as Coming Soon placeholders.</p>
+
+  <h3>How it is graded</h3>
+  <table>
+    <tr><th style="width:42mm">Criterion</th><th>What the reviewer looks for</th></tr>
+    <tr><td>Functionality</td><td>All core features working, including real-time messaging</td></tr>
+    <tr><td>UI and UX</td><td>Visual similarity to the original app</td></tr>
+    <tr><td>Database design</td><td>Well-structured schema with proper relationships</td></tr>
+    <tr><td>Backend and API design</td><td>Clean, sensible architecture</td></tr>
+    <tr><td>Code quality</td><td>Readable and well organised</td></tr>
+    <tr><td>Code modularity</td><td>Separation of concerns, reusable components</td></tr>
+    <tr><td>Code understanding</td><td>Ability to explain the implementation in an interview</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>The reading that shaped every decision below.</strong> Three of the seven criteria are about how the code is organised and explained rather than what it does. That makes the schema, the module boundaries and this document part of the deliverable, not overhead on top of it.
+  </div>
+</section>
+
+<!-- ================= 2. DECISIONS ================= -->
+<section>
+  <p class="secnum">02 — Decisions</p>
+  <h2>Every choice, and the alternative it beat</h2>
+  <p class="deck">These are the questions a reviewer is most likely to ask. Each answer names the option that was rejected, because a decision with no discarded alternative is not a decision.</p>
+
+  <div class="qa">
+    <div class="q">Why FastAPI rather than Django?</div>
+    <p class="a">The brief allows either. Django would need Channels plus a channel layer, which in practice means Redis, to hold a WebSocket. FastAPI speaks WebSocket natively in the same process, so real-time messaging needs no broker and the whole thing deploys as one service. Django's advantages here, the admin and the auth system, are not useful when authentication is a mocked OTP flow and the data is seeded by script.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">Why SQLAlchemy 2.0 with Alembic rather than raw SQL?</div>
+    <p class="a">Database design is a graded criterion, and Alembic turns the schema into reviewable history rather than one generated file. The 2.0 typed ORM also means relationships are declared once and the typing follows through into the service layer.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">Why is a conversation one table instead of separate direct and group tables?</div>
+    <p class="a">Because almost everything about a thread is identical whichever it is: it has members, messages, a last-activity timestamp, read cursors, mute and pin state. Splitting them would duplicate all of that and force every query to union two tables. A <code>type</code> column distinguishes them, and a sorted-pair <code>dm_key</code> with a unique index enforces the one rule that differs, which is that two people may only have one direct thread.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">Why does read state live on the membership instead of the message?</div>
+    <p class="a">Storing a read flag per message per member would mean writing one row per recipient every time someone opens a thread. Instead each membership holds a cursor, <code>last_read_message_id</code>, and the unread count is derived by counting messages after it. Opening a thread is then a single-row update regardless of how many messages were unread.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">Then why does a separate receipts table exist?</div>
+    <p class="a">Because the sender's check marks need per-recipient truth, and in a group one message is delivered many times. The cursor answers "what has this person read", which is what the badge needs. The receipts table answers "who has received and read this specific message", which is what the check marks need. They are different questions and conflating them produces wrong ticks in groups.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">How do check marks work in a group, then?</div>
+    <p class="a">They roll up. Delivered means every currently active member has a delivery row. Read means every active member has a read row. The <code>status</code> column on the message caches that rollup so the thread renders without an aggregate query per bubble.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">What stops a duplicate message when the network is flaky?</div>
+    <p class="a">The client generates a <code>client_id</code> before sending and the pair of sender and client id carries a unique index. A retry therefore hits the same row rather than creating a second one, and the optimistic bubble in the UI reconciles on the same key.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">Why cursor pagination rather than offset?</div>
+    <p class="a">An offset shifts underneath you. If a message arrives while someone is scrolling up through history, page two computed by offset either repeats or skips a row. A cursor anchored to a message id is stable regardless of what lands.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">Where does the access token live, and why not localStorage?</div>
+    <p class="a">In memory in the client module. A token in localStorage is readable by any script that gets injected into the page. The refresh token is an httpOnly cookie, which script cannot read at all, and it is stored server-side as a hash so logout can genuinely revoke it rather than just forgetting it.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">What exactly is mocked about the encryption?</div>
+    <p class="a">All of the cryptography. There is no X3DH key agreement and no Double Ratchet. What exists is the surface: each account carries a random identity key and registration id, each message carries a derived envelope hash, the thread header shows the encryption notice, and the contact sheet exposes a safety-number screen built from both parties' identity keys. Message bodies are stored as plaintext and the README says so rather than implying otherwise.</p>
+  </div>
+
+  <div class="qa">
+    <div class="q">Why is presence real rather than random?</div>
+    <p class="a">The brief allows mocking it, but the WebSocket hub already knows exactly who is connected. Writing <code>is_online</code> on connect and <code>last_seen_at</code> on disconnect is less code than faking it and it is actually correct.</p>
+  </div>
+</section>
+
+<!-- ================= 3. ARCHITECTURE ================= -->
+<section>
+  <p class="secnum">03 — Architecture</p>
+  <h2>How the pieces fit</h2>
+  <p class="deck">Two deployables. The browser talks to FastAPI over HTTPS for everything that must survive a refresh, and holds one WebSocket open for everything that must arrive within a frame. The socket never grants authority it did not get from a REST call first.</p>
+
+  <h3>Repository layout</h3>
+<pre>signal-clone/
+├── backend/
+│   ├── app/
+│   │   ├── api/v1/      routers, one module per feature area
+│   │   ├── core/        settings, security, shared dependencies
+│   │   ├── db/          engine, session, base, seed script
+│   │   ├── models/      SQLAlchemy tables
+│   │   ├── schemas/     Pydantic request and response models
+│   │   ├── services/    business rules, kept out of the routers
+│   │   ├── realtime/    connection hub and event definitions
+│   │   └── main.py      application factory
+│   ├── alembic/         migrations
+│   ├── tests/
+│   ├── media/           uploaded files, gitignored
+│   └── requirements.txt
+└── frontend/
+    └── src/
+        ├── app/         App Router pages
+        ├── components/  UI, one file per component
+        ├── hooks/       useSocket, useConversation, useTyping
+        ├── lib/         API client, config, shared types
+        └── store/       Zustand slices</pre>
+
+  <h3>The layering rule</h3>
+  <p>Routers parse and validate, then call a service. Services hold the business rules and are the only layer that touches the ORM. The realtime hub is a transport, not a decision maker: it broadcasts what a service already committed. This is what keeps the modularity criterion satisfiable, and it is also why a router file never runs more than a few lines.</p>
+
+  <h3>The life of a message</h3>
+  <ol>
+    <li>The composer appends an optimistic bubble keyed by a client-generated <code>client_id</code>, at status <strong>sending</strong>.</li>
+    <li>A POST persists the row and returns the server id. The optimistic bubble reconciles on <code>client_id</code>, so a retry cannot duplicate it. Status becomes <strong>sent</strong>.</li>
+    <li>The hub fans a <code>message.new</code> event to every connected member except the sender, and a <code>message.status</code> event back to the sender.</li>
+    <li>Each recipient's socket writes a receipt row on arrival. Once every active member has one, the sender's bubble becomes <strong>delivered</strong>.</li>
+    <li>Opening the thread posts a read cursor, which fills <code>read_at</code> on the receipts. Once every active member has read, the bubble becomes <strong>read</strong>.</li>
+  </ol>
+
+  <div class="note">
+    <strong>Why the order matters.</strong> Persistence happens before broadcast, never alongside it. If the write fails, nothing was announced. If the broadcast fails, the message is still in the database and the recipient picks it up on reconnect through replay-by-cursor. There is no state that exists only in a socket.
+  </div>
+
+  <h3>Reconnection</h3>
+  <p>The client heartbeats every twenty-five seconds and reconnects with exponential backoff. On resume it sends the id of the last message it saw per open thread, and the server replays anything newer. That is why a dropped connection is invisible to the user rather than a reason to refresh.</p>
+</section>
+
+<!-- ================= 4. SCHEMA ================= -->
+<section>
+  <p class="secnum">04 — Database schema</p>
+  <h2>Eleven tables</h2>
+  <p class="deck">Three decisions drive the shape: a conversation is one object whether it holds two people or twenty, read state belongs to the membership rather than the message, and a receipt is per recipient because a group message is delivered many times.</p>
+
+  <h3>Relationships</h3>
+  <table>
+    <tr><th style="width:52mm">Parent</th><th class="mono" style="width:16mm">Card.</th><th>Child</th></tr>
+    <tr><td class="c1">users</td><td class="c2">1:N</td><td class="c3">contacts (owner side), contacts (target side), conversation_members, messages, devices, auth_sessions</td></tr>
+    <tr><td class="c1">conversations</td><td class="c2">1:N</td><td class="c3">conversation_members, messages</td></tr>
+    <tr><td class="c1">messages</td><td class="c2">1:N</td><td class="c3">message_receipts, reactions, attachments, messages (reply_to, self join)</td></tr>
+  </table>
+  <p><code>phone_verifications</code> stands alone with no foreign key, because a code is requested before the account exists.</p>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">users</span><span class="tp">One row per account: identity, profile, presence.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3">UUID4 string, so ids never leak a row count</td></tr>
+      <tr><td class="c1">phone_number</td><td class="c2">TEXT UNIQUE</td><td class="c3">E.164. The primary sign-in handle</td></tr>
+      <tr><td class="c1">username</td><td class="c2">TEXT UNIQUE NULL</td><td class="c3">Optional handle, discovery without sharing a number</td></tr>
+      <tr><td class="c1">display_name</td><td class="c2">TEXT</td><td class="c3">Set during onboarding</td></tr>
+      <tr><td class="c1">about</td><td class="c2">TEXT NULL</td><td class="c3">Signal's short status line</td></tr>
+      <tr><td class="c1">avatar_url</td><td class="c2">TEXT NULL</td><td class="c3">Null falls back to initials on avatar_color</td></tr>
+      <tr><td class="c1">avatar_color</td><td class="c2">TEXT</td><td class="c3">One of Signal's twelve swatch keys</td></tr>
+      <tr><td class="c1">identity_key</td><td class="c2">TEXT</td><td class="c3">Mocked public key, feeds the safety-number screen</td></tr>
+      <tr><td class="c1">registration_id</td><td class="c2">INTEGER</td><td class="c3">Mocked device registration id</td></tr>
+      <tr><td class="c1">is_online</td><td class="c2">BOOLEAN</td><td class="c3">Flipped by the hub on connect and disconnect</td></tr>
+      <tr><td class="c1">last_seen_at</td><td class="c2">DATETIME</td><td class="c3">Written on disconnect, drives the last-seen line</td></tr>
+      <tr><td class="c1">created_at / updated_at</td><td class="c2">DATETIME</td><td class="c3"></td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">conversations</span><span class="tp">One object for direct and group threads alike.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3"></td></tr>
+      <tr><td class="c1">type</td><td class="c2">TEXT</td><td class="c3">direct or group, constrained rather than free text</td></tr>
+      <tr><td class="c1">name</td><td class="c2">TEXT NULL</td><td class="c3">Groups only. A direct thread takes its name from the peer</td></tr>
+      <tr><td class="c1">description</td><td class="c2">TEXT NULL</td><td class="c3">Group description</td></tr>
+      <tr><td class="c1">avatar_url</td><td class="c2">TEXT NULL</td><td class="c3"></td></tr>
+      <tr><td class="c1">avatar_color</td><td class="c2">TEXT</td><td class="c3">Same swatch set as users</td></tr>
+      <tr><td class="c1">dm_key</td><td class="c2">TEXT UNIQUE NULL</td><td class="c3">Sorted pair of account ids. Enforces one direct thread per pair</td></tr>
+      <tr><td class="c1">created_by</td><td class="c2">TEXT FK users</td><td class="c3">Group creator, the first admin</td></tr>
+      <tr><td class="c1">disappearing_seconds</td><td class="c2">INTEGER</td><td class="c3">Zero means off. Applies to new messages only</td></tr>
+      <tr><td class="c1">last_message_id</td><td class="c2">TEXT FK NULL</td><td class="c3">Denormalised so the list renders without a join per row</td></tr>
+      <tr><td class="c1">last_activity_at</td><td class="c2">DATETIME</td><td class="c3">The sort key for the conversation list</td></tr>
+      <tr><td class="c1">created_at / updated_at</td><td class="c2">DATETIME</td><td class="c3"></td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">conversation_members</span><span class="tp">Membership plus everything that is per person rather than per thread.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3"></td></tr>
+      <tr><td class="c1">conversation_id</td><td class="c2">TEXT FK</td><td class="c3"></td></tr>
+      <tr><td class="c1">user_id</td><td class="c2">TEXT FK</td><td class="c3"></td></tr>
+      <tr><td class="c1">role</td><td class="c2">TEXT</td><td class="c3">admin or member. Gates the add and remove endpoints</td></tr>
+      <tr><td class="c1">joined_at</td><td class="c2">DATETIME</td><td class="c3"></td></tr>
+      <tr><td class="c1">left_at</td><td class="c2">DATETIME NULL</td><td class="c3">Soft leave, so history stays attributable</td></tr>
+      <tr><td class="c1">last_read_message_id</td><td class="c2">TEXT FK NULL</td><td class="c3">The read cursor. Unread count is derived from it</td></tr>
+      <tr><td class="c1">muted_until</td><td class="c2">DATETIME NULL</td><td class="c3"></td></tr>
+      <tr><td class="c1">is_pinned / is_archived</td><td class="c2">BOOLEAN</td><td class="c3">Per person, not per thread</td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">messages</span><span class="tp">The thread itself. Soft deleted, never hard deleted.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3"></td></tr>
+      <tr><td class="c1">conversation_id</td><td class="c2">TEXT FK</td><td class="c3"></td></tr>
+      <tr><td class="c1">sender_id</td><td class="c2">TEXT FK NULL</td><td class="c3">Null for system events such as a member joining</td></tr>
+      <tr><td class="c1">type</td><td class="c2">TEXT</td><td class="c3">text, image, file or system</td></tr>
+      <tr><td class="c1">body</td><td class="c2">TEXT NULL</td><td class="c3">Plaintext. The simulation does not pretend otherwise at rest</td></tr>
+      <tr><td class="c1">envelope_hash</td><td class="c2">TEXT</td><td class="c3">Derived digest, shown on the message-info sheet</td></tr>
+      <tr><td class="c1">reply_to_id</td><td class="c2">TEXT FK NULL</td><td class="c3">Self join behind the quoted strip</td></tr>
+      <tr><td class="c1">status</td><td class="c2">TEXT</td><td class="c3">Sender-side rollup: sending, sent, delivered, read</td></tr>
+      <tr><td class="c1">client_id</td><td class="c2">TEXT</td><td class="c3">Supplied by the sender. Makes a resend idempotent</td></tr>
+      <tr><td class="c1">edited_at</td><td class="c2">DATETIME NULL</td><td class="c3">Non-null renders the edited marker</td></tr>
+      <tr><td class="c1">deleted_at</td><td class="c2">DATETIME NULL</td><td class="c3">Non-null renders the tombstone bubble</td></tr>
+      <tr><td class="c1">expires_at</td><td class="c2">DATETIME NULL</td><td class="c3">Set when the thread has a timer. Swept server-side</td></tr>
+      <tr><td class="c1">created_at</td><td class="c2">DATETIME</td><td class="c3">Sort key within the thread</td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">message_receipts</span><span class="tp">Per-recipient delivery truth. The source for check marks.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3"></td></tr>
+      <tr><td class="c1">message_id</td><td class="c2">TEXT FK</td><td class="c3"></td></tr>
+      <tr><td class="c1">user_id</td><td class="c2">TEXT FK</td><td class="c3">The recipient, never the sender</td></tr>
+      <tr><td class="c1">delivered_at</td><td class="c2">DATETIME NULL</td><td class="c3">Written when a socket acknowledges arrival</td></tr>
+      <tr><td class="c1">read_at</td><td class="c2">DATETIME NULL</td><td class="c3">Written when the read cursor passes this message</td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">contacts</span><span class="tp">Directed address book, a self-join on users.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3"></td></tr>
+      <tr><td class="c1">owner_id</td><td class="c2">TEXT FK users</td><td class="c3">Who holds this address book</td></tr>
+      <tr><td class="c1">contact_user_id</td><td class="c2">TEXT FK users</td><td class="c3">Who is in it</td></tr>
+      <tr><td class="c1">nickname</td><td class="c2">TEXT NULL</td><td class="c3">Local override, never touches the other account</td></tr>
+      <tr><td class="c1">is_blocked</td><td class="c2">BOOLEAN</td><td class="c3">Blocks delivery in both directions</td></tr>
+      <tr><td class="c1">created_at</td><td class="c2">DATETIME</td><td class="c3"></td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">reactions</span><span class="tp">One emoji per person per message, matching Signal.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3"></td></tr>
+      <tr><td class="c1">message_id</td><td class="c2">TEXT FK</td><td class="c3"></td></tr>
+      <tr><td class="c1">user_id</td><td class="c2">TEXT FK</td><td class="c3"></td></tr>
+      <tr><td class="c1">emoji</td><td class="c2">TEXT</td><td class="c3">Replacing a reaction updates this row in place</td></tr>
+      <tr><td class="c1">created_at</td><td class="c2">DATETIME</td><td class="c3"></td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">attachments</span><span class="tp">Files and images hung off a message.</span></div>
+    <table>
+      <tr><th style="width:34mm">Column</th><th style="width:30mm">Type</th><th>Notes</th></tr>
+      <tr><td class="c1">id</td><td class="c2">TEXT PK</td><td class="c3"></td></tr>
+      <tr><td class="c1">message_id</td><td class="c2">TEXT FK NULL</td><td class="c3">Null while uploaded but not yet sent</td></tr>
+      <tr><td class="c1">uploader_id</td><td class="c2">TEXT FK users</td><td class="c3"></td></tr>
+      <tr><td class="c1">file_name / content_type / size_bytes</td><td class="c2">TEXT, TEXT, INT</td><td class="c3"></td></tr>
+      <tr><td class="c1">storage_path</td><td class="c2">TEXT</td><td class="c3">Local disk in development, object storage in production</td></tr>
+      <tr><td class="c1">width / height</td><td class="c2">INTEGER NULL</td><td class="c3">Lets the bubble reserve space before the image loads</td></tr>
+      <tr><td class="c1">thumbnail_path</td><td class="c2">TEXT NULL</td><td class="c3"></td></tr>
+    </table>
+  </div>
+
+  <div class="tblock">
+    <div class="th"><span class="tn">devices · auth_sessions · phone_verifications</span><span class="tp">Supporting tables.</span></div>
+    <table>
+      <tr><th style="width:40mm">Table</th><th>Columns and purpose</th></tr>
+      <tr><td class="c1">devices</td><td class="c3">id, user_id, name, platform, is_primary, last_active_at. Backs the Linked Devices screen with real rows instead of a static mock.</td></tr>
+      <tr><td class="c1">auth_sessions</td><td class="c3">id, user_id, refresh_token_hash, user_agent, expires_at, revoked_at. Hashed, so a database dump does not hand over live sessions. Logout stamps revoked_at rather than deleting.</td></tr>
+      <tr><td class="c1">phone_verifications</td><td class="c3">id, phone_number, code, attempts, expires_at, consumed_at. The mocked OTP modelled as if it were real, including single use and an attempt counter.</td></tr>
+    </table>
+  </div>
+
+  <h3>Indexes and constraints</h3>
+  <table>
+    <tr><th style="width:52mm">Purpose</th><th>Definition</th></tr>
+    <tr><td>Thread paging</td><td class="mono">messages (conversation_id, created_at DESC)</td></tr>
+    <tr><td>Idempotent send</td><td class="mono">UNIQUE messages (sender_id, client_id)</td></tr>
+    <tr><td>Conversation list sort</td><td class="mono">conversations (last_activity_at DESC)</td></tr>
+    <tr><td>One direct thread per pair</td><td class="mono">UNIQUE conversations (dm_key)</td></tr>
+    <tr><td>One membership per person</td><td class="mono">UNIQUE conversation_members (conversation_id, user_id)</td></tr>
+    <tr><td>One receipt per recipient</td><td class="mono">UNIQUE message_receipts (message_id, user_id)</td></tr>
+    <tr><td>One reaction per person</td><td class="mono">UNIQUE reactions (message_id, user_id)</td></tr>
+    <tr><td>One address-book entry</td><td class="mono">UNIQUE contacts (owner_id, contact_user_id)</td></tr>
+    <tr><td>Disappearing sweeper</td><td class="mono">messages (expires_at) WHERE expires_at IS NOT NULL</td></tr>
+    <tr><td>Message search</td><td class="mono">FTS5 virtual table over messages.body, synced by trigger</td></tr>
+    <tr><td>SQLite pragmas</td><td class="mono">journal_mode=WAL, foreign_keys=ON, busy_timeout=5000</td></tr>
+  </table>
+  <p>WAL matters because the default rollback journal blocks readers during a write. With a WebSocket hub broadcasting while messages are being inserted, that would be felt.</p>
+</section>
+
+<!-- ================= 5. API ================= -->
+<section>
+  <p class="secnum">05 — API surface</p>
+  <h2>REST for durability, one socket for immediacy</h2>
+  <p class="deck">Everything that must survive a refresh goes through REST under the versioned prefix. Everything that must arrive within a frame goes through the socket. Nothing is authorised by the socket alone.</p>
+
+  <h3>Authentication</h3>
+  <table>
+    <tr><th style="width:14mm">Verb</th><th style="width:52mm">Path</th><th>Purpose</th></tr>
+    <tr><td class="c2">POST</td><td class="c1">/auth/request-code</td><td class="c3">Creates a verification row, returns the code in development</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/auth/verify</td><td class="c3">Exchanges a code for tokens, flags whether the account is new</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/auth/register</td><td class="c3">Completes the profile: display name, username, avatar</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/auth/refresh</td><td class="c3">Rotates the refresh token, reissues an access token</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/auth/logout</td><td class="c3">Revokes the current session row</td></tr>
+    <tr><td class="c2">GET</td><td class="c1">/auth/me</td><td class="c3">Rehydrates the session on page load</td></tr>
+  </table>
+
+  <h3>Profile and contacts</h3>
+  <table>
+    <tr><th style="width:14mm">Verb</th><th style="width:52mm">Path</th><th>Purpose</th></tr>
+    <tr><td class="c2">PATCH</td><td class="c1">/users/me</td><td class="c3">Display name, about line, avatar colour</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/users/me/avatar</td><td class="c3">Multipart upload</td></tr>
+    <tr><td class="c2">GET</td><td class="c1">/users/search</td><td class="c3">Lookup by phone number or username</td></tr>
+    <tr><td class="c2">GET</td><td class="c1">/contacts</td><td class="c3">Address book with presence folded in</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/contacts</td><td class="c3">Adds by phone number or username</td></tr>
+    <tr><td class="c2">PATCH</td><td class="c1">/contacts/{id}</td><td class="c3">Nickname and block state</td></tr>
+    <tr><td class="c2">DELETE</td><td class="c1">/contacts/{id}</td><td class="c3">Removes the entry, keeps the conversation</td></tr>
+  </table>
+
+  <h3>Conversations</h3>
+  <table>
+    <tr><th style="width:14mm">Verb</th><th style="width:52mm">Path</th><th>Purpose</th></tr>
+    <tr><td class="c2">GET</td><td class="c1">/conversations</td><td class="c3">Sorted by last activity, filters for unread and archived</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/conversations</td><td class="c3">Direct by peer id, or group by name and member list</td></tr>
+    <tr><td class="c2">GET</td><td class="c1">/conversations/{id}</td><td class="c3">Detail with members, roles and thread settings</td></tr>
+    <tr><td class="c2">PATCH</td><td class="c1">/conversations/{id}</td><td class="c3">Name, description, avatar, disappearing timer</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/conversations/{id}/read</td><td class="c3">Moves the read cursor, clears the badge</td></tr>
+    <tr><td class="c2">PATCH</td><td class="c1">/conversations/{id}/prefs</td><td class="c3">Pin, mute, archive, scoped to the caller</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/conversations/{id}/members</td><td class="c3">Admin only. Emits a system message</td></tr>
+    <tr><td class="c2">PATCH</td><td class="c1">/conversations/{id}/members/{uid}</td><td class="c3">Admin only. Promote or demote</td></tr>
+    <tr><td class="c2">DELETE</td><td class="c1">/conversations/{id}/members/{uid}</td><td class="c3">Admin only. Stamps left_at</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/conversations/{id}/leave</td><td class="c3">Self removal, reassigns admin if the last one leaves</td></tr>
+  </table>
+
+  <h3>Messages</h3>
+  <table>
+    <tr><th style="width:14mm">Verb</th><th style="width:52mm">Path</th><th>Purpose</th></tr>
+    <tr><td class="c2">GET</td><td class="c1">/conversations/{id}/messages</td><td class="c3">Cursor paged backwards from a message id</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/conversations/{id}/messages</td><td class="c3">Body, client id, optional reply target and attachments</td></tr>
+    <tr><td class="c2">PATCH</td><td class="c1">/messages/{id}</td><td class="c3">Edit within a window, stamps edited_at</td></tr>
+    <tr><td class="c2">DELETE</td><td class="c1">/messages/{id}</td><td class="c3">Soft delete, renders as a tombstone for everyone</td></tr>
+    <tr><td class="c2">PUT</td><td class="c1">/messages/{id}/reaction</td><td class="c3">Sets or replaces the caller's emoji</td></tr>
+    <tr><td class="c2">GET</td><td class="c1">/messages/search</td><td class="c3">FTS5 across every thread the caller belongs to</td></tr>
+    <tr><td class="c2">POST</td><td class="c1">/attachments</td><td class="c3">Multipart upload ahead of send</td></tr>
+  </table>
+
+  <h3>WebSocket events</h3>
+  <table>
+    <tr><th style="width:42mm">Direction</th><th>Events</th></tr>
+    <tr><td>Client to server</td><td class="mono">typing.start, typing.stop, message.delivered, presence.ping</td></tr>
+    <tr><td>Server, messages</td><td class="mono">message.new, message.updated, message.deleted, message.status</td></tr>
+    <tr><td>Server, threads</td><td class="mono">conversation.created, conversation.updated, member.added, member.removed</td></tr>
+    <tr><td>Server, people</td><td class="mono">typing, presence.changed, reaction.updated</td></tr>
+    <tr><td>Transport</td><td class="c3">Heartbeat every 25s, exponential reconnect, replay missed messages by cursor</td></tr>
+  </table>
+  <p>The hub keeps a map of account id to a set of live sockets, so one account open in several tabs behaves the way Signal behaves across several devices.</p>
+</section>
+
+<!-- ================= 6. DESIGN ================= -->
+<section>
+  <p class="secnum">06 — Design system</p>
+  <h2>Signal's values, held as tokens</h2>
+  <p class="deck">Every colour and metric lives as a CSS variable mapped into the Tailwind theme. No component hard-codes a colour, which is what makes the dark theme a token swap rather than a second set of classes.</p>
+
+  <h3>Palette</h3>
+  <table>
+    <tr><th style="width:42mm">Token</th><th style="width:30mm">Light</th><th>Dark</th></tr>
+    <tr><td class="c1">ultramarine</td><td class="c2">#3a76f0</td><td class="c2">#4b81f2</td></tr>
+    <tr><td class="c1">surface</td><td class="c2">#ffffff</td><td class="c2">#1b1b1b</td></tr>
+    <tr><td class="c1">surface-raised</td><td class="c2">#f6f6f6</td><td class="c2">#121212</td></tr>
+    <tr><td class="c1">border</td><td class="c2">#e0e0e0</td><td class="c2">#3b3b3b</td></tr>
+    <tr><td class="c1">ink</td><td class="c2">#1b1b1b</td><td class="c2">#f0f0f0</td></tr>
+    <tr><td class="c1">ink-2</td><td class="c2">#6b6b6b</td><td class="c2">#b9b9b9</td></tr>
+    <tr><td class="c1">bubble-in</td><td class="c2">#e9e9e9</td><td class="c2">#2e2e2e</td></tr>
+    <tr><td class="c1">bubble-out</td><td class="c2">#3a76f0</td><td class="c2">#3a76f0</td></tr>
+  </table>
+  <p>Twelve avatar swatches are defined as well, from <code>a100</code> crimson through <code>a210</code> ultramarine. Signal assigns one deterministically per contact, which is why a conversation list of people without photos still reads as distinct rows.</p>
+
+  <h3>Metrics taken from Signal Desktop</h3>
+  <div class="kv">
+    <span class="k">Typeface</span><span class="v">Inter, the face Signal Desktop ships</span>
+    <span class="k">Navigation rail</span><span class="v">68px, icon only, avatar and settings pinned to the bottom</span>
+    <span class="k">Conversation list</span><span class="v">320px default, resizable between 280 and 380</span>
+    <span class="k">Thread width</span><span class="v">Capped at 720px and centred</span>
+    <span class="k">Row height</span><span class="v">72px per conversation row</span>
+    <span class="k">Avatars</span><span class="v">48px in the list, 36px in a group header, 28px inline</span>
+    <span class="k">Bubble radius</span><span class="v">18px, dropping to 4px on the tail corner of a grouped run</span>
+    <span class="k">Composer</span><span class="v">Pill at 24px radius, mic becomes a send arrow once there is text</span>
+    <span class="k">Type scale</span><span class="v">15px body, 14px names, 13px previews, 11px timestamps</span>
+    <span class="k">Check marks</span><span class="v">One outline sent, two outline delivered, two filled read</span>
+    <span class="k">Breakpoint</span><span class="v">Single pane under 768px, the list slides over the thread</span>
+  </div>
+
+  <h3>Component inventory</h3>
+  <p>The whole product decomposes into these, one file each. This is the modularity criterion made concrete.</p>
+  <div class="cols2">
+  <ul>
+    <li><strong>Shell:</strong> NavRail, ConversationListPane, ChatPane, EmptyState</li>
+    <li><strong>List:</strong> ConversationRow, UnreadBadge, SearchField, FilterTabs, ArchiveRow</li>
+    <li><strong>Thread:</strong> MessageList, MessageBubble, QuotedReply, DateDivider, SystemMessage, TypingIndicator, StatusTicks, ReactionBar, ReactionPills</li>
+    <li><strong>Composer:</strong> Composer, AttachmentTray, EmojiPicker, DisappearingBadge</li>
+    <li><strong>Header:</strong> ChatHeader, PresenceLine, CallButtons, ThreadMenu</li>
+    <li><strong>Panels:</strong> ContactSheet, GroupInfoPanel, MemberRow, SafetyNumberView</li>
+    <li><strong>Modals:</strong> NewChatModal, NewGroupModal, AddMembersModal, ConfirmDialog</li>
+    <li><strong>Settings:</strong> SettingsLayout and one section per area</li>
+    <li><strong>Primitives:</strong> Avatar, Toast, Tooltip, Spinner, IconButton, Sheet</li>
+  </ul>
+  </div>
+</section>
+
+<!-- ================= 7. BUILT SO FAR ================= -->
+<section>
+  <p class="secnum">07 — Built so far</p>
+  <h2>Four phases complete, and how each was verified</h2>
+  <p class="deck">Phases 0 through 3 and phase 5 are done: the scaffold, the data layer, authentication, the conversation and message API, and the Signal interface. Every phase in this project carries a gate, and a gate is something observed rather than asserted.</p>
+
+  <h3>Phase 0 — Scaffold</h3>
+  <ul>
+    <li>A FastAPI application factory that mounts CORS, the media directory, the versioned router and a health probe, and nothing else. Routing, rules and transport each live elsewhere.</li>
+    <li>One settings object with development-safe defaults for every value, so a fresh clone runs with no <code>.env</code> file. Nothing in the codebase reads the environment directly.</li>
+    <li>Next.js with TypeScript and Tailwind v4, with the package structure already carved for later phases.</li>
+  </ul>
+  <p><strong>Gate passed:</strong> both dev servers start and the browser reaches the health route through the typed API client.</p>
+
+  <h3>Phase 1 — Data layer</h3>
+  <ul>
+    <li>Eleven SQLAlchemy models across five modules, with the relationships and constraints the design depends on.</li>
+    <li>Alembic configured with <code>render_as_batch</code>, because SQLite cannot alter a column in place. The initial migration also creates the FTS5 index and its three sync triggers.</li>
+    <li>A deterministic seed producing eight accounts, a contact graph, five direct threads and three groups, with 166 scripted messages backdated across ten days, 299 receipts, mixed read state, reactions, a pinned thread, a disappearing timer, and one group where the demo account is a plain member.</li>
+  </ul>
+  <p><strong>Gate passed:</strong> a SQL client shows correct unread counts, pin order, roles, status rollup, and full-text search hits, with <code>PRAGMA foreign_key_check</code> clean.</p>
+
+  <h3>Phase 2 — Authentication</h3>
+  <ul>
+    <li>The mocked verification flow modelled as the real one: expiry, an attempt counter, single-use codes, and invalidation of any outstanding code when a new one is requested.</li>
+    <li>Short-lived access tokens as JWTs; opaque refresh tokens stored only as a SHA-256 hash and rotated on every use.</li>
+  </ul>
+  <p><strong>Gate passed:</strong> a wrong code is refused with the attempts remaining, a correct one issues a session, refresh rotates, and a refresh after logout is rejected because the row was revoked rather than forgotten.</p>
+
+  <h3>Phase 3 — Conversations and messages</h3>
+  <ul>
+    <li>One list query covering pin order, unread counts derived from each membership cursor, resolved titles for direct threads, and per-person pin, mute and archive.</li>
+    <li>Cursor-paged threads, idempotent send, soft delete, edit inside a window, one reaction per person, and the status rollup that collapses receipts into the sender's check marks.</li>
+    <li>Admin rules enforced server-side, with every membership change recorded as a system message, and a guard that prevents a group losing its last admin.</li>
+  </ul>
+  <p><strong>Gate passed:</strong> <code>backend/scripts/smoke_test.py</code> exercises 44 behaviours against a running server and all pass, including the paths that should fail.</p>
+
+  <h3>Phase 5 — The interface</h3>
+  <ul>
+    <li>The three-pane shell: a 68px icon rail, a 320px conversation list and the thread. Below 768px the rail and list give up their space to the open conversation, as Signal does on a phone.</li>
+    <li>Signal values held as CSS variables mapped into the Tailwind theme, with the dark theme defined twice so the settings toggle can override the operating system in both directions.</li>
+    <li>Details reproduced rather than approximated: 72px rows with the unread pill, the 18px bubble radius dropping to 4px on the tail of a run, timestamps and check marks inside the bubble on the last message of a run only, coloured sender names in groups, centred date dividers and system messages, reaction pills overlapping the bubble edge, and a composer whose microphone becomes a send arrow once there is text.</li>
+    <li>Sign-in with one-tap seeded accounts, profile setup, the group and contact panel with the simulated safety number, settings with a working theme control, Coming Soon panes for calls and stories, toasts, and two keyboard shortcuts.</li>
+  </ul>
+  <p><strong>Gate passed:</strong> <code>frontend/scripts/screenshots.mjs</code> drives the real app in Chrome and captures ten screens at desktop and phone widths, in both themes, with no browser errors beyond the expected 401 from the refresh probe on a cold boot.</p>
+
+  <div class="note">
+    <strong>One real bug, found by testing rather than by reading.</strong> SQLite does not round-trip timezones: an aware datetime goes in and a naive one comes back, so the first comparison against the current time raised. It was fixed once with a <code>UtcDateTime</code> type decorator that normalises on write and re-attaches UTC on read, rather than patching each call site. Naive-UTC is stored deliberately, because the index range scans and the conversation list ordering rely on the stored text sorting lexically.
+  </div>
+
+  <div class="note">
+    <strong>One deviation from the plan.</strong> The generator produced Next.js 16 rather than 15, and 16 enables <code>cacheComponents</code> by default. The live thread is therefore built as client components. No feature is affected.
+  </div>
+</section>
+
+<!-- ================= 8. REMAINING ================= -->
+<section>
+  <p class="secnum">08 — Remaining work</p>
+  <h2>What is left, and in what order</h2>
+  <p class="deck">The backend led so a typed client could be generated from a settled schema. What remains is the live layer and the bonus features. Every phase carries a gate; if the gate does not pass, the next phase does not start.</p>
+
+  <div class="phase"><div class="n">00</div><div><div class="t">Scaffold <span class="pill done">Done</span></div><div class="g"><b>Gate</b> Both dev servers start and the browser reaches the health route through the API client.</div></div></div>
+  <div class="phase"><div class="n">01</div><div><div class="t">Data layer <span class="pill done">Done</span></div><div class="g"><b>Gate</b> The seed runs on a fresh database and the rows read correctly, with foreign keys clean.</div></div></div>
+  <div class="phase"><div class="n">02</div><div><div class="t">Authentication <span class="pill done">Done</span></div><div class="g"><b>Gate</b> Signup and sign-in both work, and a refresh after logout is refused.</div></div></div>
+  <div class="phase"><div class="n">03</div><div><div class="t">Conversations and messages <span class="pill done">Done</span></div><div class="g"><b>Gate</b> 44 API checks pass, including the paths that should fail.</div></div></div>
+  <div class="phase"><div class="n">05</div><div><div class="t">Frontend shell and Signal UI <span class="pill done">Done</span></div><div class="g"><b>Gate</b> The shell matches Signal at desktop and phone widths, in both themes.</div></div></div>
+  <div class="phase"><div class="n">04</div><div><div class="t">Realtime hub <span class="pill next">Next</span></div><div class="g"><b>Gate</b> Two tabs on different accounts exchange messages with no refresh, and a dropped socket recovers on its own.</div></div></div>
+  <div class="phase"><div class="n">06</div><div><div class="t">Onboarding polish</div><div class="g"><b>Gate</b> Avatar upload replaces the colour picker, and a reviewer reaches the chat list from a cold browser in under fifteen seconds.</div></div></div>
+  <div class="phase"><div class="n">07</div><div><div class="t">Conversation list extras</div><div class="g"><b>Gate</b> Archive and mute are reachable from the row menu, and message-body search results open the right thread at the right message.</div></div></div>
+  <div class="phase"><div class="n">08</div><div><div class="t">Chat pane: typing and live receipts</div><div class="g"><b>Gate</b> All four message statuses are observable in a two-tab demo, and nothing duplicates on a flaky send.</div></div></div>
+  <div class="phase"><div class="n">09</div><div><div class="t">Group admin controls in the UI</div><div class="g"><b>Gate</b> A non-admin sees the controls absent, and the server refuses the call if they forge it anyway.</div></div></div>
+  <div class="phase"><div class="n">10</div><div><div class="t">Settings and placeholder polish</div><div class="g"><b>Gate</b> Every navigation target resolves to a real screen, with no dead links.</div></div></div>
+  <div class="phase"><div class="n">11</div><div><div class="t">Bonus: attachments, disappearing messages</div><div class="g"><b>Gate</b> Each bonus item either works end to end or is removed. Nothing ships half-wired.</div></div></div>
+  <div class="phase"><div class="n">12</div><div><div class="t">Documentation and deploy</div><div class="g"><b>Gate</b> A stranger can follow the README from clone to running locally, and the hosted link works from a phone.</div></div></div>
+
+  <h3>Known risks, stated rather than discovered later</h3>
+  <h4>SQLite on a free host is not durable</h4>
+  <p>Render's free tier has an ephemeral filesystem, so the database resets on redeploy. Either attach a persistent disk on the paid tier, or accept the reset and re-seed on boot. Whichever is chosen gets written into the README rather than left for the reviewer to find.</p>
+  <h4>Vercel cannot hold a WebSocket</h4>
+  <p>Serverless functions time out, so the socket must terminate on the backend service. The frontend therefore talks to two origins, which makes CORS and secure-socket configuration load-bearing rather than incidental.</p>
+  <h4>Pixel fidelity has no upper bound</h4>
+  <p>The brief asks for an exact match, which is not achievable in the time budget. Layout, spacing, colour and interaction behaviour are matched; small iconography differences are accepted, since the icon set here is hand-drawn rather than Signal's own.</p>
+</section>
+
+<!-- ================= 9. RUNNING IT ================= -->
+<section>
+  <p class="secnum">09 — Running it</p>
+  <h2>From a clone to a running app</h2>
+
+  <h3>Backend</h3>
+<pre>cd backend
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS and Linux
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000</pre>
+  <p>The API is then on port 8000, with interactive documentation at <code>/docs</code>. No <code>.env</code> file is needed locally; copy <code>.env.example</code> only to override something.</p>
+
+  <h3>Frontend</h3>
+<pre>cd frontend
+npm install
+npm run dev</pre>
+  <p>The app is then on port 3000.</p>
+
+  <h3>Assumptions a reader should know</h3>
+  <ul>
+    <li>Phone verification is mocked with a fixed code, and in development that code is returned in the response body so a reviewer never has to guess it.</li>
+    <li>Encryption is simulated. There is no key agreement and no ratchet. Message bodies are plaintext at rest and the documentation says so.</li>
+    <li>Online and last-seen state is driven by real socket connect and disconnect, not a random generator.</li>
+    <li>Everything is written from scratch for this assignment. No existing clone repository was used as a source, and no code was taken from the official Signal clients, which are GPL-licensed.</li>
+  </ul>
+
+  <footer class="endnote">
+    Signal Clone — project walkthrough. Generated 8 October 2026. Companion documents: <code>README.md</code> for setup and <code>docs/PLAN.md</code> for the full build sequence.
+  </footer>
+</section>
+
+</body>
+</html>
