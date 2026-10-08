@@ -213,8 +213,9 @@ generated from the same Pydantic models the handlers use.
 
 | | |
 | --- | --- |
-| ![Sign in](docs/screenshots/01-sign-in.png) | ![Conversation list](docs/screenshots/03-conversation-list.png) |
-| ![Group thread](docs/screenshots/04-group-thread.png) | ![Details panel](docs/screenshots/06-details-panel.png) |
+| ![Sign in](docs/screenshots/01-sign-in.png) | ![Welcome pane](docs/screenshots/02-welcome.png) |
+| ![Conversation list](docs/screenshots/03-conversation-list.png) | ![Group thread](docs/screenshots/04-group-thread.png) |
+| ![Details panel](docs/screenshots/06-details-panel.png) | ![Light theme](docs/screenshots/10-light-theme.png) |
 
 Mobile layout at 390px:
 
@@ -235,12 +236,13 @@ override the OS in both directions.
 | Metric | Value |
 | ------ | ----- |
 | Typeface | Inter, the face Signal Desktop ships |
-| Navigation rail | 68px, hidden on a phone once a thread is open |
-| Conversation list | 320px |
+| Navigation rail | 64px: hamburger, Chats, Calls, Stories, settings gear pinned to the bottom |
+| Conversation list | 340px. Title left, compose and overflow right, unread filter beside the search field |
 | Thread width | 720px, centred |
 | Row height | 72px |
 | Bubble radius | 18px, dropping to 4px on the tail corner of a run |
 | Check marks | One outline sent, two outline delivered, two filled read |
+| Dark theme | One near-black shared by the rail, list and thread, separated by hairlines |
 
 ---
 

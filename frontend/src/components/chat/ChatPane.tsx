@@ -10,7 +10,7 @@ import { useState } from "react";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
-import { LockIcon } from "@/components/ui/Icons";
+import { SignalMark } from "@/components/ui/Icons";
 import type { ConversationDetail, Message } from "@/lib/types";
 
 type ChatPaneProps = {
@@ -84,19 +84,32 @@ export function ChatPane({
   );
 }
 
+/**
+ * Signal's welcome pane: the mark, a greeting, the what's-new link, and the
+ * nonprofit line anchored to the bottom of the pane.
+ */
 function EmptyPane() {
   return (
-    <section className="hidden min-w-0 flex-1 flex-col items-center justify-center gap-4 bg-surface px-6 text-center md:flex">
-      <div className="flex size-16 items-center justify-center rounded-full bg-ultramarine-soft text-ultramarine">
-        <LockIcon size={28} />
-      </div>
-      <div className="max-w-sm">
-        <h2 className="text-[17px] font-semibold text-ink">Signal</h2>
-        <p className="mt-1 text-[13px] leading-relaxed text-ink-2">
-          Select a chat to start messaging. Your conversations are end-to-end
-          encrypted.
-        </p>
-      </div>
+    <section className="relative hidden min-w-0 flex-1 flex-col items-center justify-center bg-surface px-6 text-center md:flex">
+      <SignalMark size={104} className="text-ink" />
+      <h2 className="mt-6 text-[19px] font-bold tracking-tight text-ink">
+        Welcome to Signal
+      </h2>
+      <p className="mt-1 text-[14px] text-ink-2">
+        See{" "}
+        <a
+          href="https://signal.org/blog/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-ultramarine hover:underline"
+        >
+          what&rsquo;s new
+        </a>{" "}
+        in this update
+      </p>
+      <p className="absolute bottom-6 text-[13px] text-ink-2">
+        Signal is a 501c3 nonprofit
+      </p>
     </section>
   );
 }

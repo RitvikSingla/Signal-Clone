@@ -246,3 +246,51 @@ export function TickIcon({
     </svg>
   );
 }
+
+export function MenuIcon({ size = 20, className, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
+/** The decreasing-lines filter control that sits beside Signal's search field. */
+export function FilterIcon({ size = 18, className, strokeWidth = 1.9 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M4 6.5h16M6.5 12h11M10 17.5h4" />
+    </svg>
+  );
+}
+
+/**
+ * The Signal mark: a speech bubble inside a dashed ring.
+ * Drawn rather than imported so it inherits currentColor and needs no asset.
+ */
+export function SignalMark({ size = 96, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      className={className}
+      aria-hidden
+    >
+      <circle
+        cx="50"
+        cy="50"
+        r="44"
+        stroke="currentColor"
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeDasharray="11 7"
+      />
+      <path
+        d="M50 15C30.7 15 15 28.1 15 44.3c0 8.6 4.4 16.3 11.4 21.7l-4.6 16.4a1.6 1.6 0 0 0 2.2 1.9l19.3-8.4c2.2.3 4.4.5 6.7.5 19.3 0 35-13.1 35-29.4S69.3 15 50 15Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}

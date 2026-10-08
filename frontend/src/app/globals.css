@@ -63,6 +63,9 @@
   --a210: #3a76f0;
 }
 
+/* Signal Desktop's dark theme is close to uniform: the rail, the list and
+   the thread share one near-black, separated by hairlines rather than by a
+   change in tone. Inputs and the selected row lift rather than sink. */
 [data-theme="dark"] {
   color-scheme: dark;
 
@@ -71,13 +74,13 @@
   --ultramarine-soft: #1c2740;
 
   --surface: #1b1b1b;
-  --surface-raised: #121212;
-  --surface-sunken: #0d0d0d;
-  --surface-rail: #121212;
-  --surface-overlay: #262626;
+  --surface-raised: #1b1b1b;
+  --surface-sunken: #2c2c2c;
+  --surface-rail: #1b1b1b;
+  --surface-overlay: #2c2c2c;
   --surface-hover: #ffffff0f;
 
-  --border: #3b3b3b;
+  --border: #303030;
   --border-strong: #4f4f4f;
 
   --ink: #f0f0f0;
@@ -104,13 +107,13 @@
     --ultramarine-soft: #1c2740;
 
     --surface: #1b1b1b;
-    --surface-raised: #121212;
-    --surface-sunken: #0d0d0d;
-    --surface-rail: #121212;
-    --surface-overlay: #262626;
+    --surface-raised: #1b1b1b;
+    --surface-sunken: #2c2c2c;
+    --surface-rail: #1b1b1b;
+    --surface-overlay: #2c2c2c;
     --surface-hover: #ffffff0f;
 
-    --border: #3b3b3b;
+    --border: #303030;
     --border-strong: #4f4f4f;
 
     --ink: #f0f0f0;
@@ -169,8 +172,8 @@
   --radius-bubble-tail: 4px;
   --radius-composer: 24px;
 
-  --spacing-rail: 68px;
-  --spacing-list: 320px;
+  --spacing-rail: 64px;
+  --spacing-list: 340px;
   --spacing-list-min: 280px;
   --spacing-list-max: 380px;
   --spacing-row: 72px;

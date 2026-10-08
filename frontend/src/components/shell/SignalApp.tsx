@@ -22,8 +22,10 @@ import { NavRail, type RailTab } from "@/components/shell/NavRail";
 import { NewChatModal } from "@/components/shell/NewChatModal";
 import { SettingsPane } from "@/components/shell/SettingsPane";
 import { PhoneIcon, StoriesIcon } from "@/components/ui/Icons";
+import type { MenuItem } from "@/components/ui/Menu";
 import { useToasts } from "@/components/ui/Toasts";
 import { useChat } from "@/store/chat";
+import { useSession } from "@/store/session";
 import type { UserPrivate } from "@/lib/types";
 
 export function SignalApp({ user }: { user: UserPrivate }) {
@@ -72,6 +74,26 @@ export function SignalApp({ user }: { user: UserPrivate }) {
     [push],
   );
 
+  const signOut = useSession((state) => state.signOut);
+
+  // The hamburger in the rail carries the application menu; the overflow
+  // button in the Chats header carries the list actions. Same split as the
+  // real app.
+  const appMenu: MenuItem[] = [
+    { label: "New chat", onSelect: () => setComposeOpen(true) },
+    { label: "Settings", onSelect: () => setTab("settings") },
+    { label: "Sign out", onSelect: () => void signOut(), danger: true },
+  ];
+
+  const listMenu: MenuItem[] = [
+    { label: "New group", onSelect: () => setComposeOpen(true) },
+    {
+      label: filter === "unread" ? "Show all chats" : "Filter by unread",
+      onSelect: () => setFilter(filter === "unread" ? "all" : "unread"),
+    },
+    { label: "Settings", onSelect: () => setTab("settings") },
+  ];
+
   // Keyboard shortcuts. Signal Desktop binds the same two.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -107,7 +129,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
         <NavRail
           active={tab}
           unreadTotal={unreadTotal}
-          user={user}
+          menuItems={appMenu}
           onSelect={(next) => {
             setTab(next);
             if (next !== "chats") setInfoOpen(false);
@@ -127,6 +149,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
               user={user}
               filter={filter}
               search={search}
+              overflowItems={listMenu}
               onFilterChange={setFilter}
               onSearchChange={setSearch}
               onSelect={handleSelect}
