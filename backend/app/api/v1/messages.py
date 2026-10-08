@@ -13,6 +13,7 @@ from app.schemas.message import (
     MessageSearchHit,
     ReactionIn,
 )
+from app.realtime import broadcast
 from app.services import message_service
 from app.services.conversation_service import ConversationError
 
@@ -39,18 +40,22 @@ async def edit(
     message_id: str, payload: EditMessageIn, user: RegisteredUser, db: DbSession
 ) -> MessageOut:
     try:
-        return await message_service.edit_message(db, user, message_id, payload.body)
+        message = await message_service.edit_message(db, user, message_id, payload.body)
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.message_updated(db, message)
+    return message
 
 
 @router.delete("/messages/{message_id}", response_model=MessageOut)
 async def delete(message_id: str, user: RegisteredUser, db: DbSession) -> MessageOut:
     """Soft delete. Everyone in the thread sees a tombstone."""
     try:
-        return await message_service.delete_message(db, user, message_id)
+        message = await message_service.delete_message(db, user, message_id)
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.message_updated(db, message)
+    return message
 
 
 @router.put("/messages/{message_id}/reaction", response_model=MessageOut)
@@ -59,14 +64,18 @@ async def react(
 ) -> MessageOut:
     """Set the caller's emoji. Sending the same one again clears it."""
     try:
-        return await message_service.set_reaction(db, user, message_id, payload.emoji)
+        message = await message_service.set_reaction(db, user, message_id, payload.emoji)
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.message_updated(db, message)
+    return message
 
 
 @router.delete("/messages/{message_id}/reaction", response_model=MessageOut)
 async def unreact(message_id: str, user: RegisteredUser, db: DbSession) -> MessageOut:
     try:
-        return await message_service.clear_reaction(db, user, message_id)
+        message = await message_service.clear_reaction(db, user, message_id)
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.message_updated(db, message)
+    return message

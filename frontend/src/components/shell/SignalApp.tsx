@@ -12,7 +12,7 @@
  * slides the list away.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ChatPane } from "@/components/chat/ChatPane";
 import { ConversationInfo } from "@/components/conversations/ConversationInfo";
@@ -24,6 +24,7 @@ import { NewChatModal } from "@/components/shell/NewChatModal";
 import { SettingsPane } from "@/components/shell/SettingsPane";
 import type { MenuItem } from "@/components/ui/Menu";
 import { useToasts } from "@/components/ui/Toasts";
+import { useSocket } from "@/hooks/useSocket";
 import { useChat } from "@/store/chat";
 import { useSession } from "@/store/session";
 import type { UserPrivate } from "@/lib/types";
@@ -46,7 +47,12 @@ export function SignalApp({ user }: { user: UserPrivate }) {
     loadOlder,
     sendMessage,
     react,
+    typing,
   } = useChat();
+
+  // One socket for the session. Presence, typing and live delivery all
+  // arrive through it; the store is what the UI reads.
+  const { status: socketStatus, sendTyping } = useSocket(true);
 
   const push = useToasts((state) => state.push);
 
@@ -60,6 +66,51 @@ export function SignalApp({ user }: { user: UserPrivate }) {
 
   const thread = activeId ? threads[activeId] : undefined;
   const unreadTotal = conversations.reduce((sum, c) => sum + c.unread_count, 0);
+  const typingPeople = activeId ? (typing[activeId] ?? []) : [];
+
+  // Typing frames are throttled rather than sent per keystroke: one start
+  // frame, then nothing until the sender pauses or sends.
+  const typingState = useRef<{ id: string | null; stopAt: ReturnType<typeof setTimeout> | null }>({
+    id: null,
+    stopAt: null,
+  });
+
+  const handleTyping = useCallback(
+    (isTyping: boolean) => {
+      if (!activeId) return;
+      const state = typingState.current;
+
+      if (!isTyping) {
+        if (state.stopAt) clearTimeout(state.stopAt);
+        if (state.id) sendTyping(state.id, false);
+        typingState.current = { id: null, stopAt: null };
+        return;
+      }
+
+      if (state.id !== activeId) {
+        sendTyping(activeId, true);
+      }
+      if (state.stopAt) clearTimeout(state.stopAt);
+      typingState.current = {
+        id: activeId,
+        stopAt: setTimeout(() => {
+          sendTyping(activeId, false);
+          typingState.current = { id: null, stopAt: null };
+        }, 3000),
+      };
+    },
+    [activeId, sendTyping],
+  );
+
+  // Switching threads should not leave the previous one showing dots.
+  useEffect(() => {
+    return () => {
+      const state = typingState.current;
+      if (state.stopAt) clearTimeout(state.stopAt);
+      if (state.id) sendTyping(state.id, false);
+      typingState.current = { id: null, stopAt: null };
+    };
+  }, [activeId, sendTyping]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -164,6 +215,8 @@ export function SignalApp({ user }: { user: UserPrivate }) {
               loading={thread?.loading ?? false}
               hasMore={thread?.hasMore ?? false}
               currentUserId={user.id}
+              typingPeople={typingPeople}
+              onTyping={handleTyping}
               onBack={closeConversation}
               onOpenInfo={() => setInfoOpen((open) => !open)}
               onComingSoon={comingSoon}
@@ -194,6 +247,14 @@ export function SignalApp({ user }: { user: UserPrivate }) {
       {tab === "stories" && <StoriesPane user={user} onComingSoon={comingSoon} />}
 
       {tab === "settings" && <SettingsPane user={user} />}
+
+      {socketStatus !== "open" && (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center">
+          <span className="mt-2 rounded-full bg-[#2b2b2b] px-3 py-1 text-[12px] text-white/90 shadow-lg">
+            {socketStatus === "connecting" ? "Connecting…" : "Reconnecting…"}
+          </span>
+        </div>
+      )}
 
       {composeOpen && (
         <NewChatModal

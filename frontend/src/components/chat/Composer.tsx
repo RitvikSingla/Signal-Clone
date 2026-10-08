@@ -25,7 +25,7 @@ type ComposerProps = {
   disabled?: boolean;
   onCancelReply: () => void;
   onSend: (body: string, replyToId: string | null) => void;
-  onTyping: () => void;
+  onTyping: (isTyping: boolean) => void;
 };
 
 const MAX_HEIGHT = 140;
@@ -109,7 +109,8 @@ export function Composer({
               disabled={disabled}
               onChange={(event) => {
                 setValue(event.target.value);
-                onTyping();
+                // Clearing the field is a stop, not another start.
+                onTyping(event.target.value.trim().length > 0);
               }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {

@@ -22,6 +22,7 @@ from app.schemas.conversation import (
     UpdatePrefsIn,
 )
 from app.schemas.message import MessageOut, MessagePage, SendMessageIn
+from app.realtime import broadcast
 from app.services import conversation_service, message_service
 from app.services.conversation_service import ConversationError
 
@@ -91,7 +92,7 @@ async def update_conversation(
     db: DbSession,
 ) -> ConversationDetail:
     try:
-        return await conversation_service.update_conversation(
+        detail = await conversation_service.update_conversation(
             db,
             user,
             conversation_id,
@@ -102,6 +103,8 @@ async def update_conversation(
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
 
 
 @router.patch("/{conversation_id}/prefs", response_model=ConversationSummary)
@@ -131,7 +134,8 @@ async def mark_read(
         membership, touched = await conversation_service.mark_read(
             db, user, conversation_id, payload.last_message_id
         )
-        await message_service.refresh_statuses(db, touched)
+        changed = await message_service.refresh_statuses(db, touched)
+        await broadcast.statuses_changed(db, changed)
     except ConversationError as exc:
         raise _fail(exc) from exc
 
@@ -151,11 +155,13 @@ async def add_members(
 ) -> ConversationDetail:
     """Admin only."""
     try:
-        return await conversation_service.add_members(
+        detail = await conversation_service.add_members(
             db, user, conversation_id, payload.user_ids
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
 
 
 @router.patch("/{conversation_id}/members/{member_id}", response_model=ConversationDetail)
@@ -168,11 +174,13 @@ async def change_role(
 ) -> ConversationDetail:
     """Admin only. A group may never be left without an admin."""
     try:
-        return await conversation_service.change_role(
+        detail = await conversation_service.change_role(
             db, user, conversation_id, member_id, MemberRole(payload.role)
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
 
 
 @router.delete("/{conversation_id}/members/{member_id}", response_model=ConversationDetail)
@@ -181,11 +189,13 @@ async def remove_member(
 ) -> ConversationDetail:
     """Admin only."""
     try:
-        return await conversation_service.remove_member(
+        detail = await conversation_service.remove_member(
             db, user, conversation_id, member_id
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
 
 
 @router.post("/{conversation_id}/leave", response_model=MessageAck)
@@ -238,6 +248,9 @@ async def send_message(
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+
+    if created:
+        await broadcast.message_created(db, message, user.id)
 
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return message

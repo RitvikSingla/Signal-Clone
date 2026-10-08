@@ -211,3 +211,18 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The typing indicator's three dots. Guarded by motion-safe at the call
+   site, and by the reduced-motion block above as a second line of defence. */
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}

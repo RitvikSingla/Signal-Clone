@@ -21,5 +21,6 @@ Pillow==11.0.0
 
 # Dev and test
 httpx==0.28.1
+websockets==17.2
 pytest==8.3.4
 pytest-asyncio==0.25.0

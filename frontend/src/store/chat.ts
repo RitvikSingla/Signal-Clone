@@ -57,6 +57,24 @@ type ChatState = {
 
   /** Applied when a message arrives from somewhere other than this tab. */
   upsertMessage: (message: Message) => void;
+
+  // --- live state, driven by the socket ---------------------------------
+
+  /** Conversation id -> the people currently typing in it. */
+  typing: Record<string, { userId: string; displayName: string }[]>;
+  /** Ids of messages this tab has seen but not yet acknowledged. */
+  pendingDelivery: string[];
+
+  setTyping: (
+    conversationId: string,
+    userId: string,
+    displayName: string,
+    isTyping: boolean,
+  ) => void;
+  applyStatus: (conversationId: string, messageId: string, status: Message["status"]) => void;
+  applyPresence: (userId: string, isOnline: boolean, lastSeenAt: string) => void;
+  applyConversation: (summary: ConversationSummary) => void;
+  takePendingDelivery: () => string[];
 };
 
 const emptyThread: ThreadState = {
@@ -83,6 +101,8 @@ export const useChat = create<ChatState>((set, get) => ({
   activeId: null,
   detail: null,
   threads: {},
+  typing: {},
+  pendingDelivery: [],
 
   loadConversations: async () => {
     set({ listLoading: true, listError: null });
@@ -258,6 +278,16 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   upsertMessage: (message) => {
+    // Someone who just sent a message is no longer typing.
+    if (message.sender) {
+      get().setTyping(
+        message.conversation_id,
+        message.sender.id,
+        message.sender.display_name,
+        false,
+      );
+    }
+
     set((state) => {
       const thread = state.threads[message.conversation_id] ?? emptyThread;
 
@@ -293,7 +323,77 @@ export const useChat = create<ChatState>((set, get) => ({
       return {
         conversations,
         threads: { ...state.threads, [message.conversation_id]: { ...thread, messages } },
+        // Anything that arrived from someone else and is not already in the
+        // thread needs a delivery acknowledgement sent back over the socket.
+        pendingDelivery:
+          index >= 0 || !message.sender
+            ? state.pendingDelivery
+            : [...state.pendingDelivery, message.id],
       };
     });
+  },
+
+  setTyping: (conversationId, userId, displayName, isTyping) => {
+    set((state) => {
+      const current = state.typing[conversationId] ?? [];
+      const without = current.filter((entry) => entry.userId !== userId);
+      const next = isTyping ? [...without, { userId, displayName }] : without;
+      return { typing: { ...state.typing, [conversationId]: next } };
+    });
+  },
+
+  applyStatus: (conversationId, messageId, status) => {
+    set((state) => {
+      const thread = state.threads[conversationId];
+      if (!thread) return {};
+      return {
+        threads: {
+          ...state.threads,
+          [conversationId]: {
+            ...thread,
+            messages: thread.messages.map((m) =>
+              m.id === messageId ? { ...m, status } : m,
+            ),
+          },
+        },
+      };
+    });
+  },
+
+  applyPresence: (userId, isOnline, lastSeenAt) => {
+    set((state) => ({
+      conversations: state.conversations.map((c) =>
+        c.peer?.id === userId
+          ? { ...c, peer: { ...c.peer, is_online: isOnline, last_seen_at: lastSeenAt } }
+          : c,
+      ),
+      detail:
+        state.detail?.peer?.id === userId
+          ? {
+              ...state.detail,
+              peer: {
+                ...state.detail.peer,
+                is_online: isOnline,
+                last_seen_at: lastSeenAt,
+              },
+            }
+          : state.detail,
+    }));
+  },
+
+  applyConversation: (summary) => {
+    set((state) => {
+      const known = state.conversations.some((c) => c.id === summary.id);
+      const next = known
+        ? state.conversations.map((c) => (c.id === summary.id ? summary : c))
+        : [...state.conversations, summary];
+      return { conversations: sortConversations(next) };
+    });
+  },
+
+  takePendingDelivery: () => {
+    const ids = get().pendingDelivery;
+    if (ids.length) set({ pendingDelivery: [] });
+    return ids;
   },
 }));

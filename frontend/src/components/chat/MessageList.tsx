@@ -12,6 +12,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { MessageBubble } from "@/components/chat/MessageBubble";
+import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { LockIcon } from "@/components/ui/Icons";
 import { dayDivider, isSameDay } from "@/lib/format";
 import type { Message } from "@/lib/types";
@@ -23,6 +24,7 @@ type MessageListProps = {
   hasMore: boolean;
   loading: boolean;
   conversationId: string;
+  typingPeople: { userId: string; displayName: string }[];
   onLoadOlder: () => void;
   onReply: (message: Message) => void;
   onReact: (message: Message, emoji: string) => void;
@@ -38,6 +40,7 @@ export function MessageList({
   hasMore,
   loading,
   conversationId,
+  typingPeople,
   onLoadOlder,
   onReply,
   onReact,
@@ -73,7 +76,7 @@ export function MessageList({
 
     previousHeight.current = element.scrollHeight;
     previousCount.current = messages.length;
-  }, [messages, pinnedToBottom]);
+  }, [messages, pinnedToBottom, typingPeople.length]);
 
   // Page older messages when the reader reaches the top.
   useEffect(() => {
@@ -157,6 +160,8 @@ export function MessageList({
             </div>
           );
         })}
+
+        <TypingIndicator people={typingPeople} isGroup={isGroup} />
       </div>
     </div>
   );

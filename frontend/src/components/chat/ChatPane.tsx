@@ -19,6 +19,8 @@ type ChatPaneProps = {
   loading: boolean;
   hasMore: boolean;
   currentUserId: string;
+  typingPeople: { userId: string; displayName: string }[];
+  onTyping: (isTyping: boolean) => void;
   onBack: () => void;
   onOpenInfo: () => void;
   onComingSoon: (feature: string) => void;
@@ -33,6 +35,8 @@ export function ChatPane({
   loading,
   hasMore,
   currentUserId,
+  typingPeople,
+  onTyping,
   onBack,
   onOpenInfo,
   onComingSoon,
@@ -65,6 +69,7 @@ export function ChatPane({
           isGroup={conversation.type === "group"}
           hasMore={hasMore}
           loading={loading}
+          typingPeople={typingPeople}
           onLoadOlder={onLoadOlder}
           onReply={setReplyingTo}
           onReact={onReact}
@@ -75,10 +80,11 @@ export function ChatPane({
         key={conversation.id}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
-        onSend={onSend}
-        onTyping={() => {
-          /* Typing indicators arrive with the socket in the next phase. */
+        onSend={(body, replyToId) => {
+          onTyping(false);
+          onSend(body, replyToId);
         }}
+        onTyping={onTyping}
       />
     </section>
   );

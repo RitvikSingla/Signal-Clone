@@ -23,18 +23,19 @@ someone else is in [`docs/Signal-Clone-Walkthrough.pdf`](docs/Signal-Clone-Walkt
 | 01 | Data layer, migration, seed | Done |
 | 02 | Authentication | Done |
 | 03 | Conversations and messages | Done |
+| 04 | Realtime WebSocket hub | Done |
 | 05 | Frontend shell and Signal UI | Done |
-| 04 | Realtime WebSocket hub | Next |
 | 06 | Onboarding polish | Partly done |
 | 07 | Conversation list extras | Partly done |
-| 08 | Chat pane: typing, live receipts | Partly done |
+| 08 | Chat pane: typing, live receipts | Done |
 | 09 | Group admin UI | Partly done |
 | 10 | Settings and placeholders | Done |
 | 11 | Bonus: attachments, disappearing | Not started |
 | 12 | Documentation and deploy | Not started |
 
-Phases 4 onward are what remain. Messaging currently works through REST; the
-socket that makes a second tab update without a refresh is the next piece.
+Messaging is live: two tabs on different accounts exchange messages, typing
+indicators and read receipts with no refresh. What remains is attachments,
+disappearing-message sweeping, the group admin controls in the UI, and deploy.
 
 ---
 
@@ -85,8 +86,10 @@ as a one-tap button and fills the verification code for you.
 
 ```bash
 # with both servers running
-python backend/scripts/smoke_test.py          # 44 API checks
-node frontend/scripts/screenshots.mjs out/    # drives the real UI in Chrome
+python backend/scripts/smoke_test.py          # 44 REST checks
+python backend/scripts/realtime_test.py       # 20 socket checks, two accounts
+node frontend/scripts/two-tab-test.mjs out/   # the live gate, in two real browsers
+node frontend/scripts/screenshots.mjs out/    # captures the UI in Chrome
 ```
 
 ---
@@ -103,14 +106,15 @@ signal-clone/
 │   │   ├── models/      SQLAlchemy tables
 │   │   ├── schemas/     Pydantic request and response models
 │   │   ├── services/    business rules, the only layer touching the ORM
-│   │   ├── realtime/    connection hub (phase 4)
+│   │   ├── realtime/    hub, broadcast helpers, socket endpoint
 │   │   └── main.py      application factory
 │   ├── alembic/         migrations
 │   └── scripts/         smoke_test.py
 └── frontend/src/
     ├── app/             App Router entry
     ├── components/      ui, shell, conversations, chat, auth
-    ├── lib/             api client, endpoints, types, formatting, theme
+    ├── hooks/           useSocket
+    ├── lib/             api client, endpoints, types, formatting, theme, socket
     └── store/           session and chat slices
 ```
 
@@ -209,6 +213,30 @@ generated from the same Pydantic models the handlers use.
 
 ---
 
+## Realtime
+
+One socket per tab at `/ws`, authenticated with the same access token the REST
+calls use. The hub maps an account id to a *set* of sockets, so one account
+open in several tabs behaves the way Signal behaves across several devices.
+
+| Direction | Frames |
+| --------- | ------ |
+| Client sends | `ping`, `typing.start`, `typing.stop`, `message.delivered` |
+| Server sends | `connected`, `pong`, `message.new`, `message.updated`, `message.status`, `typing`, `presence`, `conversation.updated`, `error` |
+
+Four things make it survive real conditions:
+
+- **The socket carries no authority.** Every frame is re-checked against the
+  database before it acts. Claiming to type in a thread you are not a member
+  of is silently dropped.
+- **Persist, then broadcast.** Never both at once. If the write fails nothing
+  was announced; if the broadcast fails the message is still in the database.
+- **Replay by refetch on reconnect.** Rather than buffering frames server-side,
+  the client refetches the list and the open thread when the socket resumes.
+  Simpler, and always correct.
+- **Heartbeat and backoff.** A ping every 25 seconds, and reconnection with
+  exponential backoff plus jitter so every open tab does not retry in lockstep.
+
 ## Screenshots
 
 | | |
@@ -265,9 +293,10 @@ override the OS in both directions.
   safety number built from both keys. There is no key agreement and no
   ratchet, and message bodies are plaintext at rest.
 - Online and last-seen state is driven by real socket connect and disconnect
-  rather than a random generator, so it is currently static until phase 4.
-- Typing indicators and live delivery need the socket, which is phase 4.
-  Sending works today, but a second tab needs a refresh to see it.
+  rather than a random generator.
+- The hub holds its connections in process memory. That is correct for this
+  deployment, which is a single web service, but a multi-process deployment
+  would need the sockets backed by a shared broker.
 
 ---
 

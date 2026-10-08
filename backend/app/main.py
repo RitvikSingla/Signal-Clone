@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.v1 import api_router
 from app.core.config import settings
+from app.realtime.router import router as realtime_router
 
 
 @asynccontextmanager
@@ -41,6 +42,9 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_v1_prefix)
+    # The socket sits outside the versioned prefix: it is not a REST
+    # resource and its protocol is versioned by the frame types instead.
+    app.include_router(realtime_router)
 
     settings.media_root.mkdir(parents=True, exist_ok=True)
     app.mount(

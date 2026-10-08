@@ -20,7 +20,7 @@ through the API client.
 
 ---
 
-## Phase 01 — Data layer · 3h
+## Phase 01 — Data layer · 3h · done
 
 - All eleven SQLAlchemy models with relationships and constraints.
 - Initial Alembic migration, reviewed rather than blindly generated.
@@ -33,7 +33,7 @@ populated threads with sensible timestamps.
 
 ---
 
-## Phase 02 — Authentication · 2h
+## Phase 02 — Authentication · 2h · done
 
 - Verification request and verify endpoints over the mocked code.
 - Access and refresh issuance, rotation, and the session table.
@@ -44,7 +44,7 @@ and refresh survives an expired access token.
 
 ---
 
-## Phase 03 — Conversations and messages · 3h
+## Phase 03 — Conversations and messages · 3h · done
 
 - Conversation create for direct and group, with the pair-uniqueness rule.
 - Thread listing with unread counts, last message and presence.
@@ -57,7 +57,7 @@ look right in the database.
 
 ---
 
-## Phase 04 — Realtime hub · 2h
+## Phase 04 — Realtime hub · 2h · done
 
 - Socket endpoint with token handshake and a per-account connection registry.
 - Fan-out on send, status promotion on delivery and read.
@@ -69,7 +69,7 @@ refresh, and a dropped socket recovers on its own.
 
 ---
 
-## Phase 05 — Frontend shell · 2h
+## Phase 05 — Frontend shell · 2h · done
 
 - Design tokens into the Tailwind theme, both themes at once.
 - Nav rail, resizable list pane and chat pane, with the responsive collapse.
