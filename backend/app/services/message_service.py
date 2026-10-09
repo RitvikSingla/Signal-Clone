@@ -20,8 +20,10 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.models import (
     Attachment,
+    Contact,
     Conversation,
     ConversationMember,
+    ConversationType,
     Message,
     MessageHide,
     MessageReceipt,
@@ -304,6 +306,8 @@ async def send_message(
         raise ConversationError("Conversation not found.", 404)
     if conversation.ended_at is not None:
         raise ConversationError("This group has ended.", 409)
+    if conversation.type == ConversationType.DIRECT:
+        await _check_not_blocked(db, user, conversation_id)
     require_allowed(conversation, membership, conversation.perm_send_messages, "send messages")
 
     if reply_to_id:
@@ -887,3 +891,29 @@ async def sweep_expired(db: AsyncSession) -> dict[str, list[str]]:
             (settings.media_root / path).unlink(missing_ok=True)
 
     return by_conversation
+
+
+async def _check_not_blocked(db: AsyncSession, user: User, conversation_id: str) -> None:
+    """A direct message goes nowhere if either person blocked the other."""
+    peer_id = await db.scalar(
+        select(ConversationMember.user_id).where(
+            ConversationMember.conversation_id == conversation_id,
+            ConversationMember.user_id != user.id,
+        )
+    )
+    if peer_id is None:
+        return
+    rows = (
+        await db.execute(
+            select(Contact.owner_id).where(
+                Contact.is_blocked.is_(True),
+                ((Contact.owner_id == user.id) & (Contact.contact_user_id == peer_id))
+                | ((Contact.owner_id == peer_id) & (Contact.contact_user_id == user.id)),
+            )
+        )
+    ).scalars().all()
+    if user.id in rows:
+        raise ConversationError("You blocked this person. Unblock them to send a message.", 409)
+    if rows:
+        # Deliberately vague, as Signal never tells someone they are blocked.
+        raise ConversationError("This message could not be delivered.", 403)

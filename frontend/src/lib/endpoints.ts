@@ -244,7 +244,13 @@ export function uploadAttachment(
 
 export const userApi = {
   updateProfile: (
-    payload: Partial<{ display_name: string; about: string; avatar_color: string }>,
+    payload: Partial<{
+      display_name: string;
+      about: string;
+      avatar_color: string;
+      /** A stored /media path from your own upload; "" removes the photo. */
+      avatar_url: string;
+    }>,
   ) => api.patch<UserPrivate>("/users/me", payload),
 
   search: (q: string) =>

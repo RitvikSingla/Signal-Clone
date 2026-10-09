@@ -9,6 +9,7 @@
  * draws that swatch as a pale tint with the initials in the strong colour.
  */
 
+import { mediaUrl } from "@/lib/endpoints";
 import { avatarColors, initials } from "@/lib/format";
 
 type AvatarProps = {
@@ -44,7 +45,7 @@ export function Avatar({
       {url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={url}
+          src={mediaUrl(url)}
           alt=""
           width={size}
           height={size}

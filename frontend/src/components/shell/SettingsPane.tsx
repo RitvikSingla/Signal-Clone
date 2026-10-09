@@ -32,6 +32,8 @@ import {
   PhoneIcon,
   SlidersIcon,
 } from "@/components/ui/Icons";
+import { PhotoPicker } from "@/components/ui/PhotoPicker";
+import { ApiError } from "@/lib/api";
 import { userApi } from "@/lib/endpoints";
 import { applyTheme, useTheme, type Theme } from "@/lib/theme";
 import { useSession } from "@/store/session";
@@ -156,9 +158,7 @@ function NavRow({
       onClick={() => onSelect(entry.id)}
       aria-current={active ? "page" : undefined}
       className={`flex items-center gap-3 rounded-lg px-3 py-[7px] text-left text-[13px] transition-colors ${
-        active
-          ? "bg-surface-selected text-ink"
-          : "text-ink hover:bg-surface-hover"
+        active ? "bg-surface-selected text-ink" : "text-ink hover:bg-surface-hover"
       }`}
     >
       <span className="shrink-0 text-ink [&_svg]:size-[18px]">{entry.icon}</span>
@@ -243,22 +243,28 @@ function ProfileSection({ user }: { user: UserPrivate }) {
   const patchUser = useSession((state) => state.patchUser);
   const [editing, setEditing] = useState<null | "name" | "about">(null);
 
+  async function savePhoto(url: string) {
+    try {
+      patchUser(await userApi.updateProfile({ avatar_url: url }));
+      push(url ? "Profile photo updated" : "Profile photo removed");
+    } catch (error) {
+      push(error instanceof ApiError ? error.message : "Could not save your photo.");
+    }
+  }
+
   return (
     <Shell title="Profile">
       <div className="flex flex-col items-center">
-        <Avatar
-          name={user.display_name}
-          colorKey={user.avatar_color}
-          url={user.avatar_url}
+        <PhotoPicker
+          upload
+          value={user.avatar_url}
           size={80}
+          label="Edit photo"
+          fallback={<Avatar name={user.display_name} colorKey={user.avatar_color} size={80} />}
+          onUploaded={(url) => void savePhoto(url)}
+          onRemove={() => void savePhoto("")}
         />
-        <button
-          type="button"
-          onClick={() => push("Profile photos are a placeholder in this build.")}
-          className="mt-2.5 rounded-full bg-surface-chip px-3 py-1 text-[12px] font-semibold text-ink transition hover:brightness-110"
-        >
-          Edit photo
-        </button>
+        <p className="mt-2 text-[12px] text-ink-2">Click the photo to change it</p>
       </div>
 
       <div className="mt-6 overflow-hidden rounded-xl bg-surface-raised">
@@ -281,14 +287,21 @@ function ProfileSection({ user }: { user: UserPrivate }) {
           />
         ) : (
           <>
-            <FieldRow icon={<PersonIcon />} value={user.display_name} onClick={() => setEditing("name")} />
-            <FieldRow icon={<PencilIcon />} value={user.about || "About"} onClick={() => setEditing("about")} />
+            <FieldRow
+              icon={<PersonIcon />}
+              value={user.display_name}
+              onClick={() => setEditing("name")}
+            />
+            <FieldRow
+              icon={<PencilIcon />}
+              value={user.about || "About"}
+              onClick={() => setEditing("about")}
+            />
           </>
         )}
       </div>
       <p className="mt-2.5 px-1 text-[12px] leading-relaxed text-ink-2">
-        Your profile and changes to it will be visible to people you message, contacts and
-        groups.
+        Your profile and changes to it will be visible to people you message, contacts and groups.
       </p>
 
       <div className="mt-6 overflow-hidden rounded-xl bg-surface-raised">
@@ -300,8 +313,8 @@ function ProfileSection({ user }: { user: UserPrivate }) {
         />
       </div>
       <p className="mt-2.5 px-1 text-[12px] leading-relaxed text-ink-2">
-        People can now message you using your optional username so you don&rsquo;t have to
-        give out your phone number.
+        People can now message you using your optional username so you don&rsquo;t have to give out
+        your phone number.
       </p>
     </Shell>
   );
@@ -461,9 +474,8 @@ function AppearanceSection() {
         </Row>
       </Group>
       <p className="mt-4 text-[13px] leading-relaxed text-ink-2">
-        Dark is the default. The choice is stored in this browser and applied before
-        the first paint, so it survives a refresh. System follows your operating
-        system.
+        Dark is the default. The choice is stored in this browser and applied before the first
+        paint, so it survives a refresh. System follows your operating system.
       </p>
     </Shell>
   );
@@ -479,10 +491,7 @@ function PrivacySection({ user }: { user: UserPrivate }) {
         <Row label="Typing indicators" hint="Placeholder">
           <Toggle on />
         </Row>
-        <Row
-          label="Safety number"
-          hint={`Your identity key ends ${user.identity_key.slice(-8)}`}
-        >
+        <Row label="Safety number" hint={`Your identity key ends ${user.identity_key.slice(-8)}`}>
           <span className="text-[12px] text-ink-3">Per contact</span>
         </Row>
         <Row label="Disappearing messages" hint="Set per conversation">
@@ -490,9 +499,8 @@ function PrivacySection({ user }: { user: UserPrivate }) {
         </Row>
       </Group>
       <p className="mt-4 text-[13px] leading-relaxed text-ink-2">
-        Encryption in this build is simulated. Each account carries a random
-        identity key and each message a derived envelope hash, but there is no key
-        agreement and no ratchet.
+        Encryption in this build is simulated. Each account carries a random identity key and each
+        message a derived envelope hash, but there is no key agreement and no ratchet.
       </p>
     </Shell>
   );
@@ -531,9 +539,7 @@ function AccountSection({ user }: { user: UserPrivate }) {
           </span>
         </Row>
         <Row label="Registration id" hint="Part of the simulated key material">
-          <span className="font-mono text-[13px] text-ink-2">
-            {user.registration_id}
-          </span>
+          <span className="font-mono text-[13px] text-ink-2">{user.registration_id}</span>
         </Row>
         <Row label="This device" hint="Primary">
           <span className="text-[12px] text-ink-3">Active now</span>
@@ -562,15 +568,7 @@ function Group({ children }: { children: ReactNode }) {
   );
 }
 
-function Row({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
+function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="min-w-0 flex-1">

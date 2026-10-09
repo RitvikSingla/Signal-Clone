@@ -102,7 +102,11 @@ type ChatState = {
   /** Accepting a request is adding the sender to the address book. */
   acceptRequest: (peerId: string) => Promise<void>;
   /** Blocking files the sender as a blocked contact and archives the chat. */
-  blockPeer: (conversationId: string, peerId: string) => Promise<void>;
+  blockPeer: (conversationId: string, peerId: string, archive?: boolean) => Promise<void>;
+  /** Add someone to the address book (no-op if they are already there). */
+  addContact: (userId: string) => Promise<void>;
+  removeContact: (userId: string) => Promise<void>;
+  unblockPeer: (userId: string) => Promise<void>;
 
   /** Applied when a message arrives from somewhere other than this tab. */
   upsertMessage: (message: Message) => void;
@@ -488,14 +492,36 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 
-  blockPeer: async (conversationId, peerId) => {
+  blockPeer: async (conversationId, peerId, archive = true) => {
     const existing = get().contacts.find((c) => c.user.id === peerId);
     const contact = existing ?? (await userApi.addContact({ user_id: peerId }));
     const blocked = await userApi.updateContact(contact.id, { is_blocked: true });
     set((state) => ({
       contacts: [...state.contacts.filter((c) => c.user.id !== peerId), blocked],
     }));
-    await get().setArchived(conversationId, true);
+    // Blocking a message request clears it away; blocking from a contact's
+    // settings keeps the chat, which then says you blocked them.
+    if (archive) await get().setArchived(conversationId, true);
+  },
+
+  addContact: async (userId) => {
+    await get().acceptRequest(userId);
+  },
+
+  removeContact: async (userId) => {
+    const contact = get().contacts.find((c) => c.user.id === userId);
+    if (!contact) return;
+    await userApi.removeContact(contact.id);
+    set((state) => ({ contacts: state.contacts.filter((c) => c.user.id !== userId) }));
+  },
+
+  unblockPeer: async (userId) => {
+    const contact = get().contacts.find((c) => c.user.id === userId);
+    if (!contact) return;
+    const updated = await userApi.updateContact(contact.id, { is_blocked: false });
+    set((state) => ({
+      contacts: state.contacts.map((c) => (c.user.id === userId ? updated : c)),
+    }));
   },
 
   upsertMessage: (message) => {

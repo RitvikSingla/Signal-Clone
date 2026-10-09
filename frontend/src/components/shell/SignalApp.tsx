@@ -15,7 +15,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatPane } from "@/components/chat/ChatPane";
-import { ConversationInfo } from "@/components/conversations/ConversationInfo";
 import { ArchiveList, ConversationList } from "@/components/conversations/ConversationList";
 import { AppDialogs } from "@/components/shell/AppDialogs";
 import { CallsPane } from "@/components/shell/CallsPane";
@@ -94,7 +93,6 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   const [tab, setTab] = useState<RailTab>("chats");
   const [chatsView, setChatsView] = useState<ChatsView>("list");
   const [settingsSection, setSettingsSection] = useState<SectionId>("profile");
-  const [infoOpen, setInfoOpen] = useState(false);
   const [contactsLoaded, setContactsLoaded] = useState(false);
   // Chat-scoped search (the header's magnifier) and the hit to scroll to.
   const [searchScopeId, setSearchScopeId] = useState<string | null>(null);
@@ -150,13 +148,12 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   const typingPeople = activeId ? (typing[activeId] ?? []) : [];
   const activeIsRequest = detail ? isRequest(detail) : false;
 
-  const commonGroups = useMemo(() => {
+  const commonGroupList = useMemo(() => {
     const peerId = detail?.peer?.id;
     if (!peerId) return [];
-    return conversations
-      .filter((c) => c.type === "group" && groupMembers[c.id]?.includes(peerId))
-      .map((c) => c.title);
+    return conversations.filter((c) => c.type === "group" && groupMembers[c.id]?.includes(peerId));
   }, [detail?.peer?.id, conversations, groupMembers]);
+  const commonGroups = useMemo(() => commonGroupList.map((c) => c.title), [commonGroupList]);
 
   // Typing frames are throttled rather than sent per keystroke: one start
   // frame, then nothing until the sender pauses or sends.
@@ -204,7 +201,6 @@ export function SignalApp({ user }: { user: UserPrivate }) {
 
   const handleSelect = useCallback(
     (id: string) => {
-      setInfoOpen(false);
       const summary = conversations.find((c) => c.id === id) ?? archived.find((c) => c.id === id);
       setJumpRequest(null);
       setMarkedUnread(id, false);
@@ -271,7 +267,6 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   function openSettings(section: SectionId = "profile") {
     setSettingsSection(section);
     setTab("settings");
-    setInfoOpen(false);
   }
 
   function openChat(id: string) {
@@ -400,7 +395,6 @@ export function SignalApp({ user }: { user: UserPrivate }) {
         handleSelect(target.id);
         return;
       }
-      if (event.key === "Escape" && infoOpen) setInfoOpen(false);
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -408,7 +402,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
     // searchInChat reads the latest activeId each render; listing it here
     // would re-bind the listener on every keystroke-driven render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [infoOpen, handleSelect, openDialog, setZoom, activeId]);
+  }, [handleSelect, openDialog, setZoom, activeId]);
 
   const storiesUnseen = !viewedStories.includes(ONBOARDING_STORY_ID);
   const showRail = !tabsHidden;
@@ -430,7 +424,6 @@ export function SignalApp({ user }: { user: UserPrivate }) {
               onSelect={(next) => {
                 setTab(next);
                 if (next === "chats") setChatsView("list");
-                if (next !== "chats") setInfoOpen(false);
               }}
             />
           </div>
@@ -518,7 +511,6 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 acceptedAt={detail ? (acceptedRequests[`${user.id}:${detail.id}`] ?? null) : null}
                 onTyping={handleTyping}
                 onBack={closeConversation}
-                onOpenInfo={() => setInfoOpen((open) => !open)}
                 onComingSoon={comingSoon}
                 onLoadOlder={() => activeId && void loadOlder(activeId)}
                 onSend={(body, replyToId, attachments) =>
@@ -601,18 +593,10 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 onDeleteChat={deleteActiveChat}
                 onLeftGroup={afterLeaving}
                 onMessageUser={(userId) => void startChatWith(userId)}
+                commonGroupList={commonGroupList}
+                onOpenChat={(id) => openChat(id)}
               />
             </div>
-
-            {infoOpen && detail && (
-              <div className="hidden lg:flex">
-                <ConversationInfo
-                  conversation={detail}
-                  currentUserId={user.id}
-                  onClose={() => setInfoOpen(false)}
-                />
-              </div>
-            )}
           </>
         )}
 

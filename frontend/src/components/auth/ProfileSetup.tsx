@@ -1,24 +1,41 @@
 "use client";
 
 /**
- * The profile step for a brand-new account: display name, username and
- * avatar colour. Signal asks for a name and a photo here; a colour picker
- * stands in for the photo until uploads land.
+ * The profile step for a brand-new account: photo, display name, username
+ * and about. Without a photo, the colour swatches pick the initials avatar.
+ *
+ * Uploads need a finished account, so the photo is held locally and sent
+ * straight after the profile is saved.
  */
 
 import { useState } from "react";
 
 import { Avatar } from "@/components/ui/Avatar";
+import { PhotoPicker } from "@/components/ui/PhotoPicker";
+import { useToasts } from "@/components/ui/Toasts";
 import { ApiError } from "@/lib/api";
+import { uploadAttachment, userApi } from "@/lib/endpoints";
 import { useSession } from "@/store/session";
 
 const SWATCHES = [
-  "A100", "A110", "A120", "A130", "A140", "A150",
-  "A160", "A170", "A180", "A190", "A200", "A210",
+  "A100",
+  "A110",
+  "A120",
+  "A130",
+  "A140",
+  "A150",
+  "A160",
+  "A170",
+  "A180",
+  "A190",
+  "A200",
+  "A210",
 ];
 
 export function ProfileSetup() {
-  const { completeProfile, signOut } = useSession();
+  const { completeProfile, signOut, patchUser } = useSession();
+  const push = useToasts((state) => state.push);
+  const [photo, setPhoto] = useState<{ file: File; preview: string } | null>(null);
 
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
@@ -37,6 +54,17 @@ export function ProfileSetup() {
         about: about.trim() || null,
         avatar_color: color,
       });
+      if (photo) {
+        try {
+          const attachment = await uploadAttachment(photo.file, () => undefined);
+          const user = await userApi.updateProfile({
+            avatar_url: attachment.thumbnail_url ?? attachment.url,
+          });
+          patchUser(user);
+        } catch {
+          push("Your profile is saved, but the photo did not upload. Add it in Settings.");
+        }
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not save your profile.");
     } finally {
@@ -62,10 +90,23 @@ export function ProfileSetup() {
           className="mt-6 flex flex-col gap-4 rounded-xl border border-border bg-surface p-5"
         >
           <div className="flex justify-center">
-            <Avatar name={displayName || "?"} colorKey={color} size={72} />
+            <PhotoPicker
+              value={photo?.preview ?? null}
+              size={80}
+              label={photo ? "Change profile photo" : "Add profile photo"}
+              fallback={<Avatar name={displayName || "?"} colorKey={color} size={80} />}
+              onFile={(file, preview) => {
+                if (photo) URL.revokeObjectURL(photo.preview);
+                setPhoto({ file, preview });
+              }}
+              onRemove={() => {
+                if (photo) URL.revokeObjectURL(photo.preview);
+                setPhoto(null);
+              }}
+            />
           </div>
 
-          <div className="flex flex-wrap justify-center gap-2">
+          <div className={`flex flex-wrap justify-center gap-2 ${photo ? "hidden" : ""}`}>
             {SWATCHES.map((swatch) => (
               <button
                 key={swatch}

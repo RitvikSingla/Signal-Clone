@@ -18,6 +18,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { muteItems, MuteUntilDialog } from "@/components/chat/MuteMenu";
 import { TimerSelect } from "@/components/chat/TimerSelect";
 import { Avatar } from "@/components/ui/Avatar";
+import { PhotoPicker } from "@/components/ui/PhotoPicker";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -39,13 +40,7 @@ import { Switch } from "@/components/ui/Switch";
 import { useToasts } from "@/components/ui/Toasts";
 import { ApiError } from "@/lib/api";
 import { conversationApi } from "@/lib/endpoints";
-import {
-  allowed,
-  CHAT_COLORS,
-  DEFAULT_CHAT_COLOR,
-  groupLinkUrl,
-  isAdmin,
-} from "@/lib/groups";
+import { allowed, CHAT_COLORS, DEFAULT_CHAT_COLOR, groupLinkUrl, isAdmin } from "@/lib/groups";
 import type {
   Contact,
   ConversationDetail,
@@ -195,12 +190,32 @@ function MainPage({
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-10">
         <div className="mx-auto max-w-[620px]">
           <div className="flex flex-col items-center pt-2 text-center">
-            <Avatar
-              name={conversation.title}
-              colorKey={conversation.avatar_color}
-              url={conversation.avatar_url}
+            <PhotoPicker
+              upload
+              disabled={!canEdit}
+              value={conversation.avatar_url}
               size={72}
-              group
+              label="Change group photo"
+              fallback={
+                <Avatar
+                  name={conversation.title}
+                  colorKey={conversation.avatar_color}
+                  size={72}
+                  group
+                />
+              }
+              onUploaded={(url) =>
+                void apply(
+                  () => conversationApi.update(conversation.id, { avatar_url: url }),
+                  "Could not change the photo.",
+                )
+              }
+              onRemove={() =>
+                void apply(
+                  () => conversationApi.update(conversation.id, { avatar_url: "" }),
+                  "Could not remove the photo.",
+                )
+              }
             />
             {editing === "name" ? (
               <InlineEdit
@@ -791,7 +806,7 @@ function MemberDialog({
 // Sub-pages
 // ---------------------------------------------------------------------------
 
-function SubPage({
+export function SubPage({
   title,
   onBack,
   children,
@@ -822,7 +837,13 @@ function SubPage({
   );
 }
 
-function ChatColorPage({ conversationId, onBack }: { conversationId: string; onBack: () => void }) {
+export function ChatColorPage({
+  conversationId,
+  onBack,
+}: {
+  conversationId: string;
+  onBack: () => void;
+}) {
   const color = useUi((state) => state.chatColors[conversationId]) ?? DEFAULT_CHAT_COLOR;
   const setChatColor = useUi((state) => state.setChatColor);
   const resetAll = useUi((state) => state.resetAllChatColors);
@@ -876,7 +897,7 @@ function ChatColorPage({ conversationId, onBack }: { conversationId: string; onB
   );
 }
 
-function NotificationsPage({
+export function NotificationsPage({
   conversation,
   sub,
   onOpenWhileMuted,
@@ -1366,7 +1387,13 @@ function PermissionsPage({
 // Building blocks
 // ---------------------------------------------------------------------------
 
-function Card({ children, className = "mt-5" }: { children: ReactNode; className?: string }) {
+export function Card({
+  children,
+  className = "mt-5",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
   return (
     <div className={`overflow-hidden rounded-xl bg-surface-raised py-1 ${className}`}>
       {children}
@@ -1374,7 +1401,7 @@ function Card({ children, className = "mt-5" }: { children: ReactNode; className
   );
 }
 
-function Row({
+export function Row({
   icon,
   title,
   subtitle,
@@ -1401,7 +1428,7 @@ function Row({
           {title}
         </span>
         {subtitle && (
-          <span className="block break-all text-[11.5px] leading-snug text-ink-2">{subtitle}</span>
+          <span className="block [overflow-wrap:anywhere] text-[11.5px] leading-snug text-ink-2">{subtitle}</span>
         )}
       </span>
       {trailing}
@@ -1421,7 +1448,7 @@ function Row({
   );
 }
 
-function RoundAction({
+export function RoundAction({
   children,
   label,
   onClick,
@@ -1447,7 +1474,7 @@ function RoundAction({
   );
 }
 
-function IconButton({
+export function IconButton({
   children,
   label,
   onClick,
@@ -1574,7 +1601,7 @@ function svg(children: ReactNode, size = 16) {
   );
 }
 
-function BellSlash({ muted, size = 16 }: { muted: boolean; size?: number }) {
+export function BellSlash({ muted, size = 16 }: { muted: boolean; size?: number }) {
   return svg(
     <>
       <path d="M18 9a6 6 0 1 0-12 0c0 4-1.5 5.5-1.5 5.5h15S18 13 18 9Z" />

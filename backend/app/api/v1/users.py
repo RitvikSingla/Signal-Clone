@@ -13,6 +13,8 @@ from app.core.security import safety_number
 from app.models import Contact, User
 from app.schemas.common import Message as MessageAck
 from app.schemas.common import UserPrivate, UserPublic
+from app.services import attachment_service
+from app.services.conversation_service import ConversationError
 
 router = APIRouter(tags=["users"])
 
@@ -21,6 +23,8 @@ class UpdateProfileIn(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=64)
     about: str | None = Field(default=None, max_length=140)
     avatar_color: str | None = Field(default=None, max_length=8)
+    #: A /media/... path from an upload of yours; "" removes the photo.
+    avatar_url: str | None = Field(default=None, max_length=255)
 
 
 class ContactOut(BaseModel):
@@ -61,6 +65,11 @@ async def update_me(
         user.about = payload.about.strip() or None
     if payload.avatar_color is not None:
         user.avatar_color = payload.avatar_color
+    if payload.avatar_url is not None:
+        try:
+            user.avatar_url = await attachment_service.own_image_url(db, user, payload.avatar_url)
+        except ConversationError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     await db.commit()
     await db.refresh(user)
     return UserPrivate.model_validate(user)

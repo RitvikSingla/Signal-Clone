@@ -18,6 +18,7 @@ import { CallLobby } from "@/components/chat/CallLobby";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
 import { ConversationHero } from "@/components/chat/ConversationHero";
+import { ContactDetails } from "@/components/chat/ContactDetails";
 import { GroupDetails } from "@/components/chat/GroupDetails";
 import { MuteUntilDialog } from "@/components/chat/MuteMenu";
 import { CustomTimerDialog } from "@/components/chat/TimerSelect";
@@ -56,7 +57,6 @@ type ChatPaneProps = {
   acceptedAt: string | null;
   onTyping: (isTyping: boolean) => void;
   onBack: () => void;
-  onOpenInfo: () => void;
   onComingSoon: (feature: string) => void;
   onLoadOlder: () => void;
   onSend: (body: string, replyToId: string | null, attachments: Attachment[]) => void;
@@ -85,6 +85,9 @@ type ChatPaneProps = {
   onDeleteChat: () => Promise<void>;
   onLeftGroup: () => void;
   onMessageUser: (userId: string) => void;
+  /** Groups shared with the person in a direct chat. */
+  commonGroupList: ConversationSummary[];
+  onOpenChat: (conversationId: string) => void;
   /** Set by a search hit: scroll to this message (paging back if needed). */
   jumpRequest: { messageId: string; nonce: number } | null;
   onLoadUntil: (messageId: string) => Promise<boolean>;
@@ -130,6 +133,12 @@ export function ChatPane(props: ChatPaneProps) {
     conversation ? state.chatColors[conversation.id] : undefined,
   );
   const removeMessages = useChat((state) => state.removeMessages);
+  const blockedPeer = useChat((state) => {
+    const peerId = conversation?.peer?.id;
+    return peerId && state.contacts.some((c) => c.user.id === peerId && c.is_blocked)
+      ? peerId
+      : null;
+  });
   const composer = useRef<ComposerHandle | null>(null);
   const now = useNow();
   const { jumpRequest, onLoadUntil } = props;
@@ -180,7 +189,25 @@ export function ChatPane(props: ChatPaneProps) {
   if (!conversation) return <EmptyPane onWhatsNew={props.onWhatsNew} />;
 
   const isGroup = conversation.type === "group";
-  const openInfo = () => (isGroup ? setView("details") : props.onOpenInfo());
+  const openInfo = () => setView("details");
+
+  if (view === "details" && !isGroup) {
+    return (
+      <ContactDetails
+        conversation={conversation}
+        commonGroups={props.commonGroupList}
+        onBack={() => setView("thread")}
+        onCall={(kind) => void startCall(kind)}
+        onSearch={() => {
+          setView("thread");
+          props.onSearchInChat();
+        }}
+        onMute={props.onMute}
+        onOpenChat={props.onOpenChat}
+        onDeleteChat={props.onDeleteChat}
+      />
+    );
+  }
 
   if (view === "details" && isGroup) {
     return (
@@ -406,6 +433,8 @@ export function ChatPane(props: ChatPaneProps) {
         />
       ) : conversation.can_send === false ? (
         <CannotSendBar conversation={conversation} currentUserId={currentUserId} />
+      ) : blockedPeer ? (
+        <BlockedBar name={conversation.title} userId={blockedPeer} />
       ) : isRequest ? (
         <MessageRequestBar
           name={conversation.title}
@@ -562,6 +591,26 @@ export function ChatPane(props: ChatPaneProps) {
         />
       )}
     </section>
+  );
+}
+
+/** Instead of the composer, after you block someone. */
+function BlockedBar({ name, userId }: { name: string; userId: string }) {
+  const unblockPeer = useChat((state) => state.unblockPeer);
+  return (
+    <div className="shrink-0 px-6 pb-4 pt-2 text-center">
+      <p className="text-[12.5px] text-ink">
+        You blocked <strong className="font-semibold">{name}</strong>. Unblock them to send a
+        message.
+      </p>
+      <button
+        type="button"
+        onClick={() => void unblockPeer(userId)}
+        className="mt-2.5 rounded-full bg-surface-chip px-4 py-1.5 text-[12.5px] font-semibold text-link hover:brightness-110"
+      >
+        Unblock
+      </button>
+    </div>
   );
 }
 

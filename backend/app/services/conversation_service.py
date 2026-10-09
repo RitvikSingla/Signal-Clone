@@ -496,6 +496,7 @@ async def create_group(
     avatar_url: str | None = None,
     disappearing_seconds: int = 0,
 ) -> ConversationDetail:
+    avatar_url = await _checked_avatar(db, user, avatar_url)
     unique_ids = {mid for mid in member_ids if mid != user.id}
     found = (
         (await db.scalars(select(User).where(User.id.in_(unique_ids)))).all()
@@ -596,7 +597,7 @@ async def update_conversation(
     if avatar_color is not None:
         conversation.avatar_color = avatar_color
     if avatar_url is not None:
-        conversation.avatar_url = avatar_url or None
+        conversation.avatar_url = await _checked_avatar(db, user, avatar_url)
         await add_system_message(db, conversation, "changed the group avatar.", actor=user)
 
     if disappearing_seconds is not None and disappearing_seconds != conversation.disappearing_seconds:
@@ -1142,3 +1143,10 @@ async def resolve_request(
         )
     await db.commit()
     return await get_conversation(db, user, conversation_id)
+
+
+async def _checked_avatar(db: AsyncSession, user: User, url: str | None) -> str | None:
+    # Imported here: attachment_service imports this module for its errors.
+    from app.services.attachment_service import own_image_url
+
+    return await own_image_url(db, user, url)

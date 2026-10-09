@@ -28,6 +28,7 @@ from pathlib import Path
 
 from fastapi import UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -153,3 +154,27 @@ def _image_format(path: Path) -> str | None:
     except (UnidentifiedImageError, OSError, SyntaxError, ValueError):
         return None
     return fmt if fmt in PILLOW_FORMATS else None
+
+
+async def own_image_url(db: AsyncSession, user: User, url: str | None) -> str | None:
+    """Accept an avatar URL only if it is an image this user uploaded.
+
+    Avatars are shown to everyone who sees the person or group, so an
+    arbitrary URL would let one account make every viewer's browser fetch
+    an outside address. "" or None clears the avatar.
+    """
+    if not url:
+        return None
+    prefix = f"{settings.media_url_prefix}/"
+    path = url[len(prefix):] if url.startswith(prefix) else None
+    if not path or ".." in path:
+        raise ConversationError("Choose a photo you uploaded.", 400)
+    match = await db.scalar(
+        select(Attachment).where(
+            Attachment.uploader_id == user.id,
+            (Attachment.storage_path == path) | (Attachment.thumbnail_path == path),
+        )
+    )
+    if match is None or not match.content_type.startswith("image/"):
+        raise ConversationError("Choose a photo you uploaded.", 400)
+    return url

@@ -90,11 +90,13 @@ python backend/scripts/smoke_test.py          # 44 REST checks
 python backend/scripts/realtime_test.py       # 20 socket checks, two accounts
 python backend/scripts/actions_test.py        # 26 checks: pin, forward, delete for me, search, uploads, FTS integrity
 python backend/scripts/groups_test.py         # 39 checks: group admin, link, permissions, disappearing messages
+python backend/scripts/profile_test.py        # 16 checks: profile photos, contacts, blocking
 node frontend/scripts/two-tab-test.mjs out/   # the live gate, in two real browsers
 node frontend/scripts/video-walkthrough.mjs out/                    # screens from reference video 1
 node frontend/scripts/message-actions-walkthrough.mjs out/ files/   # video 2 + attachments
 node frontend/scripts/media-search-walkthrough.mjs out/ files/      # videos 3 and 4
 node frontend/scripts/groups-walkthrough.mjs out/                   # video 5: groups, disappearing
+node frontend/scripts/profile-contacts-walkthrough.mjs out/ photo.jpg  # photos, contacts, blocking
 node frontend/scripts/screenshots.mjs out/    # captures the UI in Chrome
 ```
 
@@ -210,7 +212,7 @@ generated from the same Pydantic models the handlers use.
 | ---- | ------ |
 | Meta | `GET /health`, `GET /api/v1/ping` |
 | Auth | request-code, verify, register, refresh, logout, me, demo-accounts |
-| Profile | `PATCH /users/me`, `GET /users/search`, `GET /users/{id}/safety-number` |
+| Profile | `PATCH /users/me` (name, about, photo), `GET /users/search`, `GET /users/{id}/safety-number` |
 | Contacts | list, add, update, delete |
 | Conversations | list, create direct, create group, detail, update, prefs, read |
 | Membership | add, change role, remove, leave |

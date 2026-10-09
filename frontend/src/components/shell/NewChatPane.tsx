@@ -14,23 +14,18 @@
  * Your groups are listed under the contacts.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { TimerSelect } from "@/components/chat/TimerSelect";
 
 import { PaneHeader, PaneSearch, SidePane } from "@/components/shell/SidePane";
 import { Avatar } from "@/components/ui/Avatar";
-import {
-  AtIcon,
-  CloseIcon,
-  GroupIcon,
-  HashIcon,
-  PhotoIcon,
-  VerifiedIcon,
-} from "@/components/ui/Icons";
+import { PhotoPicker } from "@/components/ui/PhotoPicker";
+import { AtIcon, CloseIcon, GroupIcon, HashIcon, VerifiedIcon } from "@/components/ui/Icons";
 import { useToasts } from "@/components/ui/Toasts";
+import { useChat } from "@/store/chat";
 import { ApiError } from "@/lib/api";
-import { conversationApi, mediaUrl, uploadAttachment, userApi } from "@/lib/endpoints";
+import { conversationApi, userApi } from "@/lib/endpoints";
 import type { Contact, ConversationSummary, UserPrivate, UserPublic } from "@/lib/types";
 
 type View = "main" | "group-pick" | "group-name" | "username" | "phone";
@@ -104,6 +99,21 @@ export function NewChatPane({ user, contacts, groups, onClose, onOpened }: NewCh
     }
   }
 
+  const addContact = useChat((state) => state.addContact);
+  const contactIds = useMemo(
+    () => new Set(contacts.filter((c) => !c.is_blocked).map((c) => c.user.id)),
+    [contacts],
+  );
+
+  async function addToContacts(person: UserPublic) {
+    try {
+      await addContact(person.id);
+      push(`${person.display_name} added to your contacts`);
+    } catch (error) {
+      push(error instanceof ApiError ? error.message : "Could not add the contact.");
+    }
+  }
+
   const visibleGroups = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return groups.filter((g) => !needle || g.title.toLowerCase().includes(needle));
@@ -150,7 +160,19 @@ export function NewChatPane({ user, contacts, groups, onClose, onOpened }: NewCh
         <PaneHeader title="Name this group" onBack={() => setView("group-pick")} />
         <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-3">
           <div className="flex justify-center">
-            <GroupPhotoPicker value={groupPhoto} onChange={setGroupPhoto} />
+            <PhotoPicker
+              upload
+              value={groupPhoto}
+              size={80}
+              label={groupPhoto ? "Change group photo" : "Add group photo"}
+              fallback={
+                <span className="flex size-full items-center justify-center rounded-full bg-[#e3e3fe] text-[#3838f5]">
+                  <GroupIcon size={36} strokeWidth={1.5} />
+                </span>
+              }
+              onUploaded={setGroupPhoto}
+              onRemove={() => setGroupPhoto(null)}
+            />
           </div>
           <input
             autoFocus
@@ -288,9 +310,38 @@ export function NewChatPane({ user, contacts, groups, onClose, onOpened }: NewCh
                 url={person.avatar_url}
                 size={32}
               />
-              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
-                {person.display_name}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-semibold text-ink">
+                  {person.display_name}
+                </span>
+                {!contactIds.has(person.id) && (
+                  <span className="block truncate text-[11.5px] text-ink-2">
+                    {person.username ? `@${person.username}` : person.phone_number}
+                  </span>
+                )}
               </span>
+              {!picking && !contactIds.has(person.id) && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  title="Add to contacts"
+                  aria-label={`Add ${person.display_name} to contacts`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void addToContacts(person);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void addToContacts(person);
+                    }
+                  }}
+                  className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-surface-chip px-2.5 text-[12px] font-semibold text-link hover:brightness-110"
+                >
+                  + Add
+                </span>
+              )}
               {picking && (
                 <span
                   className={`flex size-[18px] shrink-0 items-center justify-center rounded-full border-2 ${
@@ -376,64 +427,6 @@ export function NewChatPane({ user, contacts, groups, onClose, onOpened }: NewCh
         </div>
       )}
     </SidePane>
-  );
-}
-
-/** The round photo with a camera badge on "Name this group". */
-function GroupPhotoPicker({
-  value,
-  onChange,
-}: {
-  value: string | null;
-  onChange: (url: string | null) => void;
-}) {
-  const push = useToasts((state) => state.push);
-  const input = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-
-  return (
-    <button
-      type="button"
-      onClick={() => input.current?.click()}
-      aria-label={value ? "Change group photo" : "Add group photo"}
-      className="relative size-20 rounded-full"
-    >
-      {value ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={mediaUrl(value)} alt="" className="size-full rounded-full object-cover" />
-      ) : (
-        <span className="flex size-full items-center justify-center rounded-full bg-[#e3e3fe] text-[#3838f5]">
-          <GroupIcon size={36} strokeWidth={1.5} />
-        </span>
-      )}
-      <span className="absolute bottom-0 right-0 flex size-6 items-center justify-center rounded-full border-2 border-surface-raised bg-surface-chip text-ink">
-        {busy ? (
-          <span className="size-3 animate-spin rounded-full border-2 border-ink-3 border-t-transparent" />
-        ) : (
-          <PhotoIcon size={12} />
-        )}
-      </span>
-      <input
-        ref={input}
-        type="file"
-        hidden
-        accept="image/png,image/jpeg,image/webp,image/gif"
-        onChange={async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (!file) return;
-          setBusy(true);
-          try {
-            const attachment = await uploadAttachment(file, () => undefined);
-            onChange(attachment.thumbnail_url ?? attachment.url);
-          } catch (error) {
-            push(error instanceof ApiError ? error.message : "Could not upload the photo.");
-          } finally {
-            setBusy(false);
-          }
-        }}
-      />
-    </button>
   );
 }
 
