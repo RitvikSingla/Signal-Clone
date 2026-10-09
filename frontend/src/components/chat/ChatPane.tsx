@@ -46,6 +46,8 @@ import { useUi } from "@/store/ui";
 
 type ChatPaneProps = {
   conversation: ConversationDetail | null;
+  /** A chat is selected but its detail has not arrived. */
+  opening?: boolean;
   conversations: ConversationSummary[];
   messages: Message[];
   pins: Message[];
@@ -207,7 +209,15 @@ export function ChatPane(props: ChatPaneProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingCall, peerId]);
 
-  if (!conversation) return <EmptyPane onWhatsNew={props.onWhatsNew} />;
+  if (!conversation) {
+    // A chat is being opened that the list has no summary for yet (from
+    // search, say): an empty pane, never the welcome screen.
+    return props.opening ? (
+      <section className="flex h-full min-w-0 flex-1 bg-surface" aria-busy="true" />
+    ) : (
+      <EmptyPane onWhatsNew={props.onWhatsNew} />
+    );
+  }
 
   const isGroup = conversation.type === "group";
   const openInfo = () => setView("details");
@@ -382,9 +392,9 @@ export function ChatPane(props: ChatPaneProps) {
       />
 
       {loading && messages.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-[13px] text-ink-2">
-          Loading conversation…
-        </div>
+        // Usually a few milliseconds: keep the thread area quiet rather than
+        // flashing a loading line.
+        <div className="flex-1" aria-busy="true" />
       ) : (
         <MessageList
           conversationId={conversation.id}

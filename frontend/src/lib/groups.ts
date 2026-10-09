@@ -82,6 +82,10 @@ export function systemText(
 
 /** "Aarav and you", "Aarav, Priya and you", "Aarav, Priya and 3 others". */
 export function membersLine(detail: ConversationDetail, currentUserId: string): string {
+  // The member list arrives with the detail; the summary only has a count.
+  if (detail.members.length === 0) {
+    return detail.member_count === 1 ? "1 member" : `${detail.member_count} members`;
+  }
   const others = detail.members
     .filter((m) => m.is_active && m.user.id !== currentUserId)
     .map((m) => m.user.display_name);

@@ -497,6 +497,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
               <ChatPane
                 key={detail?.id ?? "empty"}
                 conversation={detail}
+                opening={Boolean(activeId) && !detail}
                 conversations={conversations}
                 pins={activeId ? (pins[activeId] ?? []) : []}
                 messages={thread?.messages ?? []}

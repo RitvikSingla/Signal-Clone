@@ -185,7 +185,21 @@ export const useChat = create<ChatState>((set, get) => ({
   setSearch: (search) => set({ search }),
 
   openConversation: async (id, options) => {
-    set({ activeId: id, detail: null });
+    // Show the chat at once: until its detail arrives, stand in with the
+    // summary the list already holds (no member list yet), rather than
+    // dropping back to the empty "Welcome to Signal" pane.
+    const current = get().detail;
+    const summary =
+      get().conversations.find((c) => c.id === id) ?? get().archived.find((c) => c.id === id);
+    set({
+      activeId: id,
+      detail:
+        current?.id === id
+          ? current
+          : summary
+            ? { ...summary, description: null, created_by: null, members: [] }
+            : null,
+    });
 
     const existing = get().threads[id];
     if (!existing) {
