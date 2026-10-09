@@ -37,6 +37,7 @@ export type MessagePreview = {
   status: MessageStatus;
   is_deleted: boolean;
   event?: string | null;
+  attachment_kind?: "sticker" | "voice" | null;
   created_at: string;
 };
 
@@ -143,6 +144,7 @@ export type MessageSearchHit = {
   message_id: string;
   conversation_id: string;
   conversation_title: string;
+  sender_id?: string | null;
   sender_name: string | null;
   body: string | null;
   created_at: string;

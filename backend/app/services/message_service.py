@@ -722,7 +722,11 @@ async def message_info(db: AsyncSession, user: User, message_id: str) -> Message
 
 
 async def search_messages(
-    db: AsyncSession, user: User, query: str, limit: int = 30
+    db: AsyncSession,
+    user: User,
+    query: str,
+    limit: int = 30,
+    conversation_id: str | None = None,
 ) -> list[MessageSearchHit]:
     """Full-text search, scoped to threads the caller belongs to.
 
@@ -740,6 +744,7 @@ async def search_messages(
                m.conversation_id,
                m.body,
                m.created_at,
+               m.sender_id,
                u.display_name  AS sender_name,
                c.type          AS conv_type,
                c.name          AS conv_name
@@ -753,13 +758,26 @@ async def search_messages(
         LEFT JOIN users u     ON u.id = m.sender_id
         WHERE messages_fts MATCH :query
           AND m.deleted_at IS NULL
+          AND (:conversation_id IS NULL OR m.conversation_id = :conversation_id)
+          AND NOT EXISTS (
+              SELECT 1 FROM message_hides h
+              WHERE h.message_id = m.id AND h.user_id = :user_id
+          )
         ORDER BY m.created_at DESC
         LIMIT :limit
         """
     )
     rows = (
         await db.execute(
-            sql, {"user_id": user.id, "query": f'"{cleaned}"', "limit": limit}
+            sql,
+            {
+                "user_id": user.id,
+                # Trailing * makes the last word a prefix, so "con" finds
+                # "congratulation" as it does in Signal.
+                "query": f'"{cleaned}"*',
+                "limit": limit,
+                "conversation_id": conversation_id,
+            },
         )
     ).mappings()
 
@@ -782,6 +800,7 @@ async def search_messages(
                 message_id=row["message_id"],
                 conversation_id=row["conversation_id"],
                 conversation_title=title or "Group",
+                sender_id=row["sender_id"],
                 sender_name=row["sender_name"],
                 body=row["body"],
                 created_at=row["created_at"],

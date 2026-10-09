@@ -826,3 +826,27 @@ export function ForwardIcon({ size = 16, className, strokeWidth = 1.8 }: IconPro
     </svg>
   );
 }
+
+export function DownloadIcon({ size = 16, className, strokeWidth = 1.8 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" />
+    </svg>
+  );
+}
+
+export function CheckIcon({ size = 16, className, strokeWidth = 2 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+export function ScrollDownIcon({ size = 16, className, strokeWidth = 2 }: IconProps) {
+  return (
+    <svg {...base(size, className)} strokeWidth={strokeWidth}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}

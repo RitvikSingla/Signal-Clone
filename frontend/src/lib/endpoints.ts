@@ -131,8 +131,12 @@ export const messageApi = {
   clearReaction: (messageId: string) =>
     api.delete<Message>(`/messages/${messageId}/reaction`),
 
-  search: (q: string) =>
-    api.get<MessageSearchHit[]>(`/messages/search?q=${encodeURIComponent(q)}`),
+  search: (q: string, conversationId?: string | null) =>
+    api.get<MessageSearchHit[]>(
+      `/messages/search?q=${encodeURIComponent(q)}${
+        conversationId ? `&conversation_id=${encodeURIComponent(conversationId)}` : ""
+      }`,
+    ),
 
   /** durationSeconds null pins "Forever". */
   pin: (messageId: string, durationSeconds: number | null) =>
@@ -157,7 +161,8 @@ export const messageApi = {
 
 /** Absolute URL for a path the API returns under /media. */
 export function mediaUrl(path: string): string {
-  return path.startsWith("http") ? path : `${config.apiUrl}${path}`;
+  // Local previews (blob:, data:) and absolute URLs pass straight through.
+  return /^(https?:|blob:|data:)/.test(path) ? path : `${config.apiUrl}${path}`;
 }
 
 /**

@@ -146,6 +146,7 @@ export function previewText(
   isGroup: boolean,
   isMine: boolean,
   event?: string | null,
+  attachmentKind?: string | null,
 ): string {
   if (type === "system" && event === "pinned") {
     const who = isMine ? "You" : (senderName?.split(" ")[0] ?? "Someone");
@@ -154,6 +155,8 @@ export function previewText(
 
   let text: string;
   if (isDeleted) text = "This message was deleted";
+  else if (attachmentKind === "sticker") text = "Sticker";
+  else if (attachmentKind === "voice") text = "🎤 Voice message";
   else if (type === "image") text = body ? `📷 ${body}` : "📷 Photo";
   else if (type === "file") text = body ? `📎 ${body}` : "📎 File";
   else text = body ?? "";

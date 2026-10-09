@@ -12,13 +12,16 @@
  * an X to drop one before sending.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CloseIcon,
+  DownloadIcon,
   FileIcon,
+  ForwardIcon,
+  PauseIcon,
   PlayIcon,
 } from "@/components/ui/Icons";
 import { mediaUrl } from "@/lib/endpoints";
@@ -28,6 +31,9 @@ import type { Attachment } from "@/lib/types";
 export const isImage = (a: Attachment) => a.content_type.startsWith("image/");
 export const isVideo = (a: Attachment) => a.content_type.startsWith("video/");
 export const isAudio = (a: Attachment) => a.content_type.startsWith("audio/");
+/** Stickers made in the Sticker Pack Creator travel as images named sticker-*. */
+export const isSticker = (a: Attachment) =>
+  a.content_type.startsWith("image/") && a.file_name.startsWith("sticker-");
 
 /** Local blob URLs (optimistic bubbles) pass through; server paths get the API origin. */
 function src(path: string): string {
@@ -55,12 +61,7 @@ export function AttachmentContent({
       )}
       {others.map((attachment) =>
         isAudio(attachment) ? (
-          <audio
-            key={attachment.id}
-            controls
-            src={src(attachment.url)}
-            className="h-10 w-[260px] max-w-full"
-          />
+          <VoiceNote key={attachment.id} attachment={attachment} mine={mine} />
         ) : (
           <FileCard key={attachment.id} attachment={attachment} mine={mine} />
         ),
@@ -176,17 +177,147 @@ function FileCard({ attachment, mine }: { attachment: Attachment; mine: boolean 
  * Save with the original file name. The server stores opaque files under a
  * random name, so the browser is handed a blob and told what to call it.
  */
-export async function download(attachment: Attachment): Promise<void> {
+export async function download(attachment: Attachment, sentAt?: string): Promise<void> {
   const response = await fetch(src(attachment.url));
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = attachment.file_name;
+  link.download = downloadName(attachment, sentAt);
   document.body.appendChild(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * Signal names saved photos and videos after the moment they were sent,
+ * "signal-2026-10-09-10-20-24-633.png"; other files keep their own name.
+ */
+export function downloadName(attachment: Attachment, sentAt?: string): string {
+  if (!isImage(attachment) && !isVideo(attachment)) return attachment.file_name;
+  const when = sentAt ? new Date(sentAt) : new Date();
+  const pad = (value: number, size = 2) => String(value).padStart(size, "0");
+  const stamp = [
+    when.getFullYear(),
+    pad(when.getMonth() + 1),
+    pad(when.getDate()),
+    pad(when.getHours()),
+    pad(when.getMinutes()),
+    pad(when.getSeconds()),
+    pad(when.getMilliseconds(), 3),
+  ].join("-");
+  const extension = attachment.file_name.includes(".")
+    ? attachment.file_name.split(".").pop()
+    : attachment.content_type.split("/")[1];
+  return `signal-${stamp}.${extension}`;
+}
+
+/** Deterministic bar heights (0.25..1) from a string, via a small LCG. */
+function waveform(key: string, count: number): number[] {
+  const heights: number[] = [];
+  let seed = [...key].reduce((sum, ch) => sum + ch.charCodeAt(0), 7);
+  for (let i = 0; i < count; i += 1) {
+    seed = (seed * 9301 + 49297) % 233280;
+    heights.push(0.25 + (seed / 233280) * 0.75);
+  }
+  return heights;
+}
+
+/** A voice message: play button, a waveform that fills as it plays, time. */
+function VoiceNote({ attachment, mine }: { attachment: Attachment; mine: boolean }) {
+  const audio = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  // A stable pseudo-waveform from the attachment id: the file carries no
+  // peaks, and decoding every note on screen would be wasteful.
+  const bars = useMemo(() => waveform(attachment.id, 28), [attachment.id]);
+
+  const shown = playing || progress > 0 ? progress * duration : duration;
+  const label = `${Math.floor(shown / 60)}:${String(Math.floor(shown % 60)).padStart(2, "0")}`;
+
+  return (
+    <div className="flex w-[250px] max-w-full items-center gap-2.5 px-1 py-1">
+      <button
+        type="button"
+        onClick={() => {
+          const node = audio.current;
+          if (!node) return;
+          if (node.paused) void node.play();
+          else node.pause();
+        }}
+        aria-label={playing ? "Pause voice message" : "Play voice message"}
+        className={`flex size-9 shrink-0 items-center justify-center rounded-full ${
+          mine ? "bg-white text-ultramarine" : "bg-ink text-surface"
+        }`}
+      >
+        {playing ? <PauseIcon size={14} /> : <PlayIcon size={14} />}
+      </button>
+      <span className="flex h-7 min-w-0 flex-1 items-center gap-[2px] overflow-hidden" aria-hidden>
+        {bars.map((height, index) => (
+          <span
+            key={index}
+            className={`w-[3px] rounded-full ${
+              index / bars.length < progress
+                ? mine
+                  ? "bg-white"
+                  : "bg-ink"
+                : mine
+                  ? "bg-white/45"
+                  : "bg-ink-3"
+            }`}
+            style={{ height: `${height * 100}%` }}
+          />
+        ))}
+      </span>
+      <span
+        className={`w-9 shrink-0 text-right text-[11px] tabular-nums ${
+          mine ? "text-white/85" : "text-ink-2"
+        }`}
+      >
+        {label}
+      </span>
+      <audio
+        ref={audio}
+        src={src(attachment.url)}
+        preload="metadata"
+        onLoadedMetadata={(event) => {
+          const node = event.currentTarget;
+          if (Number.isFinite(node.duration)) {
+            setDuration(node.duration);
+            return;
+          }
+          // MediaRecorder WebM carries no duration. Seeking far past the end
+          // makes the browser scan the file and report the real length.
+          const reset = () => {
+            node.removeEventListener("timeupdate", reset);
+            node.currentTime = 0;
+            if (Number.isFinite(node.duration)) setDuration(node.duration);
+          };
+          node.addEventListener("timeupdate", reset);
+          node.currentTime = 1e101;
+        }}
+        onDurationChange={(event) => {
+          const value = event.currentTarget.duration;
+          if (Number.isFinite(value)) setDuration(value);
+        }}
+        onTimeUpdate={(event) => {
+          const node = event.currentTarget;
+          if (Number.isFinite(node.duration) && node.duration > 0) {
+            setProgress(node.currentTime / node.duration);
+          }
+        }}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          setProgress(0);
+        }}
+      />
+    </div>
+  );
 }
 
 /** Full-screen viewer for photos and videos, with arrows between them. */
@@ -194,11 +325,15 @@ export function Lightbox({
   items,
   start,
   caption,
+  sentAt,
+  onForward,
   onClose,
 }: {
   items: Attachment[];
   start: number;
   caption?: string | null;
+  sentAt?: string;
+  onForward?: () => void;
   onClose: () => void;
 }) {
   const [index, setIndex] = useState(start);
@@ -228,21 +363,17 @@ export function Lightbox({
           {item.file_name}
           {items.length > 1 && ` · ${index + 1} of ${items.length}`}
         </span>
-        <button
-          type="button"
-          onClick={() => void download(item)}
-          className="h-8 rounded-full px-3 text-[13px] font-semibold hover:bg-white/10"
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="flex size-9 items-center justify-center rounded-full hover:bg-white/10"
-        >
-          <CloseIcon size={20} />
-        </button>
+        {onForward && (
+          <LightboxButton label="Forward" onClick={onForward}>
+            <ForwardIcon size={19} />
+          </LightboxButton>
+        )}
+        <LightboxButton label="Save" onClick={() => void download(item, sentAt)}>
+          <DownloadIcon size={19} />
+        </LightboxButton>
+        <LightboxButton label="Close" onClick={onClose}>
+          <CloseIcon size={19} />
+        </LightboxButton>
       </div>
 
       <div className="relative flex min-h-0 flex-1 items-center justify-center px-16" onClick={onClose}>
@@ -291,6 +422,28 @@ export function Lightbox({
         {caption}
       </div>
     </div>
+  );
+}
+
+function LightboxButton({
+  children,
+  label,
+  onClick,
+}: {
+  children: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex size-9 items-center justify-center rounded-full text-white/90 hover:bg-white/10 hover:text-white"
+    >
+      {children}
+    </button>
   );
 }
 

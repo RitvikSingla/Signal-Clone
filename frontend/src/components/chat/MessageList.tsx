@@ -18,7 +18,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode 
 
 import { MessageBubble, type BubbleActions } from "@/components/chat/MessageBubble";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
-import { PinIcon } from "@/components/ui/Icons";
+import { PinIcon, ScrollDownIcon } from "@/components/ui/Icons";
 import { useNow } from "@/hooks/useNow";
 import { dayDivider, isSameDay } from "@/lib/format";
 import type { Message } from "@/lib/types";
@@ -35,6 +35,8 @@ type MessageListProps = {
   /** An event to slot into the timeline, such as "You accepted the request". */
   event: { at: string; node: ReactNode } | null;
   highlightId: string | null;
+  unreadFromId: string | null;
+  unreadCount: number;
   /** Ids ticked in selection mode; null when not selecting. */
   selection: string[] | null;
   onToggleSelected: (message: Message) => void;
@@ -57,6 +59,8 @@ export function MessageList({
   hero,
   event,
   highlightId,
+  unreadFromId,
+  unreadCount,
   selection,
   onToggleSelected,
   onLoadOlder,
@@ -134,8 +138,7 @@ export function MessageList({
     function handleScroll() {
       const node = scroller.current;
       if (!node) return;
-      const distanceFromBottom =
-        node.scrollHeight - node.scrollTop - node.clientHeight;
+      const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
       setPinnedToBottom(distanceFromBottom < 80);
       if (node.scrollTop < 120 && hasMore && !loading) onLoadOlder();
     }
@@ -153,91 +156,122 @@ export function MessageList({
     : -1;
 
   return (
-    <div
-      ref={scroller}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 md:px-5"
-    >
-      <div className="flex w-full flex-col">
-        {!hasMore && hero}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scroller}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 md:px-5"
+      >
+        <div className="flex w-full flex-col">
+          {!hasMore && hero}
 
-        {hasMore && (
-          <div className="py-3 text-center text-[12px] text-ink-2">
-            {loading ? "Loading earlier messages…" : "Scroll up for more"}
-          </div>
-        )}
+          {hasMore && (
+            <div className="py-3 text-center text-[12px] text-ink-2">
+              {loading ? "Loading earlier messages…" : "Scroll up for more"}
+            </div>
+          )}
 
-        {messages.map((message, index) => {
-          const previous = messages[index - 1];
-          const next = messages[index + 1];
-          const mine = message.sender?.id === currentUserId;
+          {messages.map((message, index) => {
+            const previous = messages[index - 1];
+            const next = messages[index + 1];
+            const mine = message.sender?.id === currentUserId;
 
-          const needsDivider =
-            !previous || !isSameDay(previous.created_at, message.created_at);
+            const needsDivider = !previous || !isSameDay(previous.created_at, message.created_at);
 
-          const eventHere = index === eventIndex && event ? event.node : null;
+            const eventHere = index === eventIndex && event ? event.node : null;
 
-          if (message.type === "system") {
+            if (message.type === "system") {
+              return (
+                <Fragment key={message.id}>
+                  {eventHere}
+                  {needsDivider && <DateDivider iso={message.created_at} />}
+                  {message.event === "pinned" ? (
+                    <PinnedEvent
+                      who={
+                        message.sender?.id === currentUserId
+                          ? "You"
+                          : (message.sender?.display_name ?? "Someone")
+                      }
+                      targetId={message.reply_to?.id ?? null}
+                      onJumpTo={onJumpTo}
+                    />
+                  ) : (
+                    <SystemMessage text={message.body ?? ""} />
+                  )}
+                </Fragment>
+              );
+            }
+
+            const startsRun =
+              needsDivider ||
+              !previous ||
+              previous.type === "system" ||
+              previous.sender?.id !== message.sender?.id ||
+              new Date(message.created_at).getTime() - new Date(previous.created_at).getTime() >
+                RUN_WINDOW_MS;
+
+            const endsRun =
+              !next ||
+              next.type === "system" ||
+              next.sender?.id !== message.sender?.id ||
+              !isSameDay(next.created_at, message.created_at) ||
+              new Date(next.created_at).getTime() - new Date(message.created_at).getTime() >
+                RUN_WINDOW_MS;
+
             return (
               <Fragment key={message.id}>
                 {eventHere}
                 {needsDivider && <DateDivider iso={message.created_at} />}
-                {message.event === "pinned" ? (
-                  <PinnedEvent
-                    who={message.sender?.id === currentUserId ? "You" : (message.sender?.display_name ?? "Someone")}
-                    targetId={message.reply_to?.id ?? null}
-                    onJumpTo={onJumpTo}
-                  />
-                ) : (
-                  <SystemMessage text={message.body ?? ""} />
-                )}
+                {message.id === unreadFromId && <UnreadDivider count={unreadCount} />}
+                <MessageBubble
+                  message={message}
+                  mine={mine}
+                  isGroup={isGroup}
+                  currentUserId={currentUserId}
+                  now={now}
+                  highlighted={message.id === highlightId}
+                  startsRun={startsRun}
+                  endsRun={endsRun}
+                  selecting={selection !== null}
+                  selected={selection?.includes(message.id) ?? false}
+                  onToggleSelected={onToggleSelected}
+                  actions={actions}
+                />
               </Fragment>
             );
-          }
+          })}
 
-          const startsRun =
-            needsDivider ||
-            !previous ||
-            previous.type === "system" ||
-            previous.sender?.id !== message.sender?.id ||
-            new Date(message.created_at).getTime() -
-              new Date(previous.created_at).getTime() >
-              RUN_WINDOW_MS;
+          {event && eventIndex === messages.length && event.node}
 
-          const endsRun =
-            !next ||
-            next.type === "system" ||
-            next.sender?.id !== message.sender?.id ||
-            !isSameDay(next.created_at, message.created_at) ||
-            new Date(next.created_at).getTime() -
-              new Date(message.created_at).getTime() >
-              RUN_WINDOW_MS;
-
-          return (
-            <Fragment key={message.id}>
-              {eventHere}
-              {needsDivider && <DateDivider iso={message.created_at} />}
-              <MessageBubble
-                message={message}
-                mine={mine}
-                isGroup={isGroup}
-                currentUserId={currentUserId}
-                now={now}
-                highlighted={message.id === highlightId}
-                startsRun={startsRun}
-                endsRun={endsRun}
-                selecting={selection !== null}
-                selected={selection?.includes(message.id) ?? false}
-                onToggleSelected={onToggleSelected}
-                actions={actions}
-              />
-            </Fragment>
-          );
-        })}
-
-        {event && eventIndex === messages.length && event.node}
-
-        <TypingIndicator people={typingPeople} isGroup={isGroup} />
+          <TypingIndicator people={typingPeople} isGroup={isGroup} />
+        </div>
       </div>
+
+      {!pinnedToBottom && (
+        <button
+          type="button"
+          onClick={() => {
+            const node = scroller.current;
+            if (node) node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
+          }}
+          aria-label="Scroll to bottom"
+          className="animate-pop-in absolute bottom-3 right-4 flex size-9 items-center justify-center rounded-full bg-surface-chip text-ink shadow-[0_2px_10px_rgba(0,0,0,0.35)] hover:brightness-110"
+        >
+          <ScrollDownIcon size={18} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "1 Unread Message", across the thread above the first unread one. */
+function UnreadDivider({ count }: { count: number }) {
+  return (
+    <div className="my-3 flex items-center gap-3" role="separator">
+      <span className="h-px flex-1 bg-border-strong" />
+      <span className="text-[12px] font-semibold text-ink">
+        {count === 1 ? "1 Unread Message" : `${count} Unread Messages`}
+      </span>
+      <span className="h-px flex-1 bg-border-strong" />
     </div>
   );
 }
@@ -280,9 +314,7 @@ function PinnedEvent({
 function SystemMessage({ text }: { text: string }) {
   return (
     <div className="my-2.5 flex justify-center">
-      <span className="max-w-[80%] text-center text-[12px] leading-snug text-ink-2">
-        {text}
-      </span>
+      <span className="max-w-[80%] text-center text-[12px] leading-snug text-ink-2">{text}</span>
     </div>
   );
 }

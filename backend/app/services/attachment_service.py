@@ -53,6 +53,9 @@ INLINE_TYPES: dict[str, str] = {
     ".m4a": "audio/mp4",
     ".ogg": "audio/ogg",
     ".wav": "audio/wav",
+    # Voice messages: MediaRecorder's Opus-in-WebM, kept apart from .webm
+    # so the thread draws a voice note rather than a video tile.
+    ".weba": "audio/webm",
 }
 
 PILLOW_FORMATS = {"JPEG": ".jpg", "PNG": ".png", "GIF": ".gif", "WEBP": ".webp"}

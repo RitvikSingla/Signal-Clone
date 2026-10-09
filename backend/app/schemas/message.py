@@ -48,6 +48,8 @@ class MessagePreview(BaseModel):
     status: MessageStatus
     is_deleted: bool
     event: str | None = None
+    #: "sticker" or "voice", so the list can say so instead of "Photo".
+    attachment_kind: str | None = None
     created_at: datetime
 
 
@@ -141,6 +143,7 @@ class MessageSearchHit(BaseModel):
     message_id: str
     conversation_id: str
     conversation_title: str
+    sender_id: str | None = None
     sender_name: str | None
     body: str | None
     created_at: datetime

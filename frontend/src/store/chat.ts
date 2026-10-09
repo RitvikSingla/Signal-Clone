@@ -28,6 +28,12 @@ type ThreadState = {
   hasMore: boolean;
   nextBefore: string | null;
   loading: boolean;
+  /**
+   * The first message that was unread when the thread was opened. The
+   * "N Unread Messages" divider sits above it until the thread is left.
+   */
+  unreadFromId?: string | null;
+  unreadCount?: number;
 };
 
 type ListFilter = "all" | "unread";
@@ -51,11 +57,16 @@ type ChatState = {
    * markRead is false for a pending message request: Signal does not tell
    * the sender anything was read until the request is accepted.
    */
-  openConversation: (id: string, options?: { markRead?: boolean }) => Promise<void>;
+  openConversation: (
+    id: string,
+    options?: { markRead?: boolean; currentUserId?: string },
+  ) => Promise<void>;
   markConversationRead: (id: string) => Promise<void>;
   clearReaction: (messageId: string) => Promise<void>;
   closeConversation: () => void;
   loadOlder: (id: string) => Promise<void>;
+  /** Page older history until messageId is loaded. True when found. */
+  loadUntil: (id: string, messageId: string) => Promise<boolean>;
 
   sendMessage: (
     id: string,
@@ -182,6 +193,19 @@ export const useChat = create<ChatState>((set, get) => ({
     // Guard against a slow response for a thread the user has since left.
     if (get().activeId !== id) return;
 
+    // Where the unread divider goes: count back over other people's
+    // messages from the end, as many as the badge said were unread.
+    const unread = get().conversations.find((c) => c.id === id)?.unread_count ?? 0;
+    const me = options?.currentUserId;
+    let unreadFromId: string | null = null;
+    let left = unread;
+    for (let i = page.messages.length - 1; i >= 0 && left > 0; i -= 1) {
+      const m = page.messages[i];
+      if (m.type === "system" || !m.sender || m.sender.id === me) continue;
+      left -= 1;
+      unreadFromId = m.id;
+    }
+
     set((state) => ({
       detail,
       threads: {
@@ -191,6 +215,8 @@ export const useChat = create<ChatState>((set, get) => ({
           hasMore: page.has_more,
           nextBefore: page.next_before,
           loading: false,
+          unreadFromId,
+          unreadCount: unread,
         },
       },
     }));
@@ -241,6 +267,17 @@ export const useChat = create<ChatState>((set, get) => ({
         },
       };
     });
+  },
+
+  loadUntil: async (id, messageId) => {
+    for (let page = 0; page < 25; page += 1) {
+      const thread = get().threads[id];
+      if (!thread) return false;
+      if (thread.messages.some((m) => m.id === messageId)) return true;
+      if (!thread.hasMore) return false;
+      await get().loadOlder(id);
+    }
+    return false;
   },
 
   sendMessage: async (id, body, replyToId = null, attachments = []) => {
@@ -503,6 +540,7 @@ export const useChat = create<ChatState>((set, get) => ({
                   status: message.status,
                   is_deleted: message.deleted_at !== null,
                   event: message.event ?? null,
+                  attachment_kind: previewKind(message),
                   created_at: message.created_at,
                 },
               }
@@ -611,4 +649,15 @@ function replyQuote(messages: Message[], replyToId: string | null): Message["rep
     type: target.type,
     is_deleted: target.deleted_at !== null,
   };
+}
+
+/** Mirrors the server's attachment_kind for previews built client-side. */
+function previewKind(message: Message): "sticker" | "voice" | null {
+  const first = message.attachments[0];
+  if (!first) return null;
+  if (first.content_type.startsWith("image/") && first.file_name.startsWith("sticker-")) {
+    return "sticker";
+  }
+  if (first.content_type.startsWith("audio/")) return "voice";
+  return null;
 }

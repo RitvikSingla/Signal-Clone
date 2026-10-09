@@ -88,10 +88,11 @@ as a one-tap button and fills the verification code for you.
 # with both servers running
 python backend/scripts/smoke_test.py          # 44 REST checks
 python backend/scripts/realtime_test.py       # 20 socket checks, two accounts
-python backend/scripts/actions_test.py        # 20 checks: pin, forward, delete for me, info, uploads
+python backend/scripts/actions_test.py        # 26 checks: pin, forward, delete for me, search, uploads, FTS integrity
 node frontend/scripts/two-tab-test.mjs out/   # the live gate, in two real browsers
 node frontend/scripts/video-walkthrough.mjs out/                    # screens from reference video 1
 node frontend/scripts/message-actions-walkthrough.mjs out/ files/   # video 2 + attachments
+node frontend/scripts/media-search-walkthrough.mjs out/ files/      # videos 3 and 4
 node frontend/scripts/screenshots.mjs out/    # captures the UI in Chrome
 ```
 

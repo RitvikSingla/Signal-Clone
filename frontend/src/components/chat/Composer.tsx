@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { StagedStrip, type StagedFile } from "@/components/chat/Attachments";
 import { EmojiPicker } from "@/components/chat/EmojiPicker";
 import {
+  CheckIcon,
   CloseIcon,
   EmojiIcon,
   FileIcon,
@@ -31,7 +32,8 @@ import {
 import { Menu } from "@/components/ui/Menu";
 import { useToasts } from "@/components/ui/Toasts";
 import { ApiError } from "@/lib/api";
-import { uploadAttachment } from "@/lib/endpoints";
+import { mediaUrl, uploadAttachment } from "@/lib/endpoints";
+import { requestMedia, stopStream } from "@/lib/media";
 import type { Attachment, Message } from "@/lib/types";
 
 export type ComposerHandle = { addFiles: (files: File[]) => void };
@@ -78,6 +80,40 @@ export function Composer({
   const [attachOpen, setAttachOpen] = useState(false);
   const [staged, setStaged] = useState<StagedFile[]>([]);
   const [fileKind, setFileKind] = useState<"media" | "file">("media");
+
+  // A finished recording uploads, then sends as soon as it is stored, with
+  // no staging step: that is how Signal sends a voice message.
+  const sendVoice = useCallback(
+    (file: File) => {
+      uploadAttachment(file, () => undefined)
+        .then((attachment) => onSend("", replyingTo?.id ?? null, [attachment]))
+        .catch((error: unknown) =>
+          push(error instanceof ApiError ? error.message : "Could not send the voice message."),
+        );
+      onCancelReply();
+    },
+    [onSend, onCancelReply, replyingTo, push],
+  );
+  const { recorder, start: startRecording } = useVoiceRecorder(sendVoice);
+
+  // A pack sticker is re-sent as a fresh upload of the stored file: an
+  // attachment belongs to exactly one message on the server.
+  const sendCustomSticker = useCallback(
+    async (url: string) => {
+      try {
+        const blob = await (await fetch(mediaUrl(url))).blob();
+        const name = url.split("/").pop() ?? "sticker.png";
+        const file = new File([blob], name.startsWith("sticker-") ? name : `sticker-${name}`, {
+          type: blob.type || "image/png",
+        });
+        const attachment = await uploadAttachment(file, () => undefined);
+        onSend("", null, [attachment]);
+      } catch {
+        push("Could not send the sticker.");
+      }
+    },
+    [onSend, push],
+  );
   const field = useRef<HTMLTextAreaElement>(null);
   const filePicker = useRef<HTMLInputElement>(null);
   const uploads = useRef(new Map<string, AbortController>());
@@ -236,7 +272,9 @@ export function Composer({
   }
 
   const replyName =
-    replyingTo?.sender?.id === currentUserId ? "You" : (replyingTo?.sender?.display_name ?? "Unknown");
+    replyingTo?.sender?.id === currentUserId
+      ? "You"
+      : (replyingTo?.sender?.display_name ?? "Unknown");
   const replyText =
     replyingTo?.body ||
     (replyingTo?.attachments.length
@@ -284,133 +322,263 @@ export function Composer({
 
       <StagedStrip staged={staged} onRemove={removeStaged} />
 
-      <div className="relative flex items-end gap-1.5">
-        <div className="relative">
-          <button
-            type="button"
-            data-picker-trigger
-            onClick={() => setPickerOpen((open) => !open)}
-            aria-label="Open emoji chooser"
-            aria-expanded={pickerOpen}
-            className={`flex size-8 shrink-0 items-center justify-center rounded-full transition-colors ${
-              pickerOpen ? "text-ink" : "text-ink-2 hover:text-ink"
-            }`}
-          >
-            <EmojiIcon size={20} />
-          </button>
-          {pickerOpen && (
-            <EmojiPicker
-              onClose={() => setPickerOpen(false)}
-              onEmoji={insert}
-              onSticker={(sticker) => {
-                setPickerOpen(false);
-                onSend(sticker, null, []);
-              }}
-              onGif={(url) => {
-                setPickerOpen(false);
-                onSend(url, null, []);
-              }}
-            />
-          )}
-        </div>
-
-        <div className="flex min-w-0 flex-1 items-end rounded-[18px] bg-surface-sunken px-3.5 py-[5px]">
-          <textarea
-            id="composer-field"
-            ref={field}
-            rows={1}
-            value={value}
-            disabled={disabled}
-            onChange={(event) => {
-              setValue(event.target.value);
-              // Clearing the field is a stop, not another start.
-              if (!editing) onTyping(event.target.value.trim().length > 0);
-            }}
-            onPaste={(event) => {
-              const files = [...event.clipboardData.files];
-              if (files.length && !editing) {
-                event.preventDefault();
-                addFiles(files);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                submit();
-              }
-              if (event.key === "Escape") {
-                if (editing) onCancelEdit();
-                else if (replyingTo) onCancelReply();
-              }
-            }}
-            placeholder={staged.length ? "Add a message" : "Message"}
-            className="max-h-[160px] w-full resize-none bg-transparent py-[3px] text-[14px] leading-[1.4] text-ink outline-none placeholder:text-ink-2"
-          />
-        </div>
-
-        {!hasText && ready.length === 0 && !editing && (
-          <button
-            type="button"
-            onClick={() => onComingSoon("Voice messages")}
-            aria-label="Record a voice message"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-2 transition-colors hover:text-ink"
-          >
-            <MicIcon size={19} />
-          </button>
-        )}
-
-        {!editing && (
+      {recorder ? (
+        <VoiceRecorderBar
+          recorder={recorder}
+          onCancel={() => recorder.finish(false)}
+          onSend={() => recorder.finish(true)}
+        />
+      ) : (
+        <div className="relative flex items-end gap-1.5">
           <div className="relative">
             <button
               type="button"
-              onClick={() => setAttachOpen((open) => !open)}
-              aria-label="Add attachment"
-              aria-expanded={attachOpen}
-              className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-2 transition-colors hover:text-ink"
+              data-picker-trigger
+              onClick={() => setPickerOpen((open) => !open)}
+              aria-label="Open emoji chooser"
+              aria-expanded={pickerOpen}
+              className={`flex size-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+                pickerOpen ? "text-ink" : "text-ink-2 hover:text-ink"
+              }`}
             >
-              <PlusIcon size={19} strokeWidth={1.8} />
+              <EmojiIcon size={20} />
             </button>
-            {attachOpen && (
-              <Menu
-                align="right"
-                placement="above"
-                onClose={() => setAttachOpen(false)}
-                items={[
-                  {
-                    label: "Photos & videos",
-                    icon: <PhotoIcon />,
-                    onSelect: () => {
-                      setFileKind("media");
-                      requestAnimationFrame(() => filePicker.current?.click());
-                    },
-                  },
-                  {
-                    label: "File",
-                    icon: <FileIcon />,
-                    onSelect: () => {
-                      setFileKind("file");
-                      requestAnimationFrame(() => filePicker.current?.click());
-                    },
-                  },
-                  { label: "Poll", icon: <PollIcon />, onSelect: () => onComingSoon("Polls") },
-                ]}
+            {pickerOpen && (
+              <EmojiPicker
+                onClose={() => setPickerOpen(false)}
+                onEmoji={insert}
+                onSticker={(sticker) => {
+                  setPickerOpen(false);
+                  onSend(sticker, null, []);
+                }}
+                onCustomSticker={(sticker) => {
+                  setPickerOpen(false);
+                  void sendCustomSticker(sticker.url);
+                }}
+                onGif={(url) => {
+                  setPickerOpen(false);
+                  onSend(url, null, []);
+                }}
               />
             )}
-            <input
-              ref={filePicker}
-              type="file"
-              hidden
-              multiple
-              accept={fileKind === "media" ? "image/*,video/*" : undefined}
+          </div>
+
+          <div className="flex min-w-0 flex-1 items-end rounded-[18px] bg-surface-sunken px-3.5 py-[5px]">
+            <textarea
+              id="composer-field"
+              ref={field}
+              rows={1}
+              value={value}
+              disabled={disabled}
               onChange={(event) => {
-                const files = [...(event.target.files ?? [])];
-                if (files.length) addFiles(files);
-                event.target.value = "";
+                setValue(event.target.value);
+                // Clearing the field is a stop, not another start.
+                if (!editing) onTyping(event.target.value.trim().length > 0);
               }}
+              onPaste={(event) => {
+                const files = [...event.clipboardData.files];
+                if (files.length && !editing) {
+                  event.preventDefault();
+                  addFiles(files);
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  submit();
+                }
+                if (event.key === "Escape") {
+                  if (editing) onCancelEdit();
+                  else if (replyingTo) onCancelReply();
+                }
+              }}
+              placeholder={staged.length ? "Add a message" : "Message"}
+              className="max-h-[160px] w-full resize-none bg-transparent py-[3px] text-[14px] leading-[1.4] text-ink outline-none placeholder:text-ink-2"
             />
           </div>
-        )}
+
+          {!hasText && ready.length === 0 && !editing && (
+            <button
+              type="button"
+              onClick={() => void startRecording()}
+              aria-label="Record a voice message"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-2 transition-colors hover:text-ink"
+            >
+              <MicIcon size={19} />
+            </button>
+          )}
+
+          {!editing && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setAttachOpen((open) => !open)}
+                aria-label="Add attachment"
+                aria-expanded={attachOpen}
+                className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-2 transition-colors hover:text-ink"
+              >
+                <PlusIcon size={19} strokeWidth={1.8} />
+              </button>
+              {attachOpen && (
+                <Menu
+                  align="right"
+                  placement="above"
+                  onClose={() => setAttachOpen(false)}
+                  items={[
+                    {
+                      label: "Photos & videos",
+                      icon: <PhotoIcon />,
+                      onSelect: () => {
+                        setFileKind("media");
+                        requestAnimationFrame(() => filePicker.current?.click());
+                      },
+                    },
+                    {
+                      label: "File",
+                      icon: <FileIcon />,
+                      onSelect: () => {
+                        setFileKind("file");
+                        requestAnimationFrame(() => filePicker.current?.click());
+                      },
+                    },
+                    { label: "Poll", icon: <PollIcon />, onSelect: () => onComingSoon("Polls") },
+                  ]}
+                />
+              )}
+              <input
+                ref={filePicker}
+                type="file"
+                hidden
+                multiple
+                accept={fileKind === "media" ? "image/*,video/*" : undefined}
+                onChange={(event) => {
+                  const files = [...(event.target.files ?? [])];
+                  if (files.length) addFiles(files);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type Recording = {
+  startedAt: number;
+  stream: MediaStream;
+  finish: (send: boolean) => void;
+};
+
+/**
+ * Record with MediaRecorder; on send, upload the clip like any attachment
+ * and send it as a voice message. Returns the live recording, if any.
+ */
+function useVoiceRecorder(onRecorded: (file: File) => void): {
+  recorder: Recording | null;
+  start: () => Promise<void>;
+} {
+  const [recorder, setRecorder] = useState<Recording | null>(null);
+  const active = useRef<Recording | null>(null);
+
+  // Never leave the microphone open when the composer goes away.
+  useEffect(() => () => active.current?.finish(false), []);
+
+  const start = useCallback(async () => {
+    if (active.current) return;
+    const stream = await requestMedia("voice-message");
+    if (!stream) return;
+
+    const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "";
+    const media = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    const chunks: BlobPart[] = [];
+    let send = false;
+
+    media.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    media.onstop = () => {
+      stopStream(stream);
+      if (send && chunks.length) {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        onRecorded(new File([blob], `voice-message-${Date.now()}.weba`, { type: "audio/webm" }));
+      }
+    };
+
+    const recording: Recording = {
+      startedAt: Date.now(),
+      stream,
+      finish: (shouldSend) => {
+        send = shouldSend;
+        if (media.state !== "inactive") media.stop();
+        else stopStream(stream);
+        active.current = null;
+        setRecorder(null);
+      },
+    };
+    media.start(250);
+    active.current = recording;
+    setRecorder(recording);
+  }, [onRecorded]);
+
+  return { recorder, start };
+}
+
+/** Replaces the field while recording: cancel, red dot and timer, send. */
+function VoiceRecorderBar({
+  recorder,
+  onCancel,
+  onSend,
+}: {
+  recorder: Recording;
+  onCancel: () => void;
+  onSend: () => void;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsed(Date.now() - recorder.startedAt), 250);
+    return () => clearInterval(timer);
+  }, [recorder.startedAt]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onCancel();
+      if (event.key === "Enter") onSend();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel, onSend]);
+
+  const seconds = Math.floor(elapsed / 1000);
+  const label = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+  return (
+    <div className="flex items-center gap-2" role="group" aria-label="Recording voice message">
+      <button
+        type="button"
+        onClick={onCancel}
+        aria-label="Cancel recording"
+        className="flex size-8 shrink-0 items-center justify-center rounded-full text-ink-2 hover:bg-surface-hover hover:text-ink"
+      >
+        <CloseIcon size={16} />
+      </button>
+      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[18px] bg-surface-sunken px-3.5">
+        <span className="size-2.5 shrink-0 animate-pulse rounded-full bg-[#e8404a]" aria-hidden />
+        <span className="text-[13px] tabular-nums text-ink">{label}</span>
+        <span className="truncate text-[12.5px] text-ink-2">Recording voice message…</span>
       </div>
+      <button
+        type="button"
+        onClick={onSend}
+        aria-label="Send voice message"
+        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-ultramarine text-white hover:bg-ultramarine-hover"
+      >
+        <CheckIcon size={16} />
+      </button>
     </div>
   );
 }

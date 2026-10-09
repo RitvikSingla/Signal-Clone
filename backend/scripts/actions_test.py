@@ -13,7 +13,9 @@ and an oversized file is refused.
 from __future__ import annotations
 
 import io
+import sqlite3
 import sys
+from pathlib import Path
 
 import httpx
 from PIL import Image
@@ -148,11 +150,80 @@ def main() -> None:
             r.text,
         )
 
+        # --- search --------------------------------------------------------
+        hits = client.get(f"{API}/messages/search", params={"q": "sto"}, headers=me).json()
+        check("search matches word prefixes", any("stove" in (h["body"] or "").lower() for h in hits), hits)
+        scoped = client.get(
+            f"{API}/messages/search",
+            params={"q": "sto", "conversation_id": direct["id"]},
+            headers=me,
+        ).json()
+        check(
+            "chat-scoped search stays in that chat",
+            scoped and all(h["conversation_id"] == direct["id"] for h in scoped),
+            scoped,
+        )
+        check("hits carry the sender id", all(h.get("sender_id") for h in scoped), scoped)
+        hidden_hits = client.get(
+            f"{API}/messages/search",
+            params={"q": (hide_target["body"] or "x").split()[0], "conversation_id": direct["id"]},
+            headers=me,
+        ).json()
+        check(
+            "messages deleted for me do not show in search",
+            all(h["message_id"] != hide_target["id"] for h in hidden_hits),
+            hidden_hits,
+        )
+
+        # --- voice note ------------------------------------------------------
+        r = client.post(
+            f"{API}/attachments",
+            files={"file": ("voice-message.weba", b"\x1aE\xdf\xa3" + b"\x00" * 64, "audio/webm")},
+            headers=me,
+        )
+        check(
+            "a voice note is stored as audio, not video",
+            r.status_code == 201 and r.json()["content_type"] == "audio/webm",
+            r.text,
+        )
+
         # --- info ----------------------------------------------------------
         info = client.get(f"{API}/messages/{sent['id']}/info", headers=me).json()
         check("sender's info lists the recipient", len(info["receipts"]) == 1, info)
         info = client.get(f"{API}/messages/{sent['id']}/info", headers=aarav).json()
         check("recipient's info lists only themselves", len(info["receipts"]) == 1)
+
+        # --- search index stays consistent --------------------------------
+        # A message with no text that later changes status (a read tick)
+        # used to corrupt the FTS5 index; see migration c9e2f1a4b6d8.
+        buffer = io.BytesIO()
+        Image.new("RGB", (40, 40), (10, 10, 10)).save(buffer, "PNG")
+        bare = client.post(
+            f"{API}/attachments",
+            files={"file": ("bare.png", buffer.getvalue(), "image/png")},
+            headers=me,
+        ).json()
+        sent = client.post(
+            f"{API}/conversations/{direct['id']}/messages",
+            json={"client_id": "actions-test-bare", "attachment_ids": [bare["id"]]},
+            headers=me,
+        ).json()
+        client.post(
+            f"{API}/conversations/{direct['id']}/read",
+            json={"last_message_id": sent["id"]},
+            headers=aarav,
+        )
+        database = Path(__file__).resolve().parent.parent / "signal.db"
+        if database.exists():
+            label = "search index intact after a caption-less photo is read"
+            try:
+                with sqlite3.connect(database) as db:
+                    db.execute(
+                        "INSERT INTO messages_fts(messages_fts, rank) VALUES('integrity-check', 1)"
+                    )
+                check(label, True)
+            except sqlite3.DatabaseError as exc:
+                check(label, False, exc)
 
     print(f"\n{len(failures)} failures" if failures else "\nAll checks passed.")
     sys.exit(1 if failures else 0)

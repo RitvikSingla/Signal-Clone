@@ -52,6 +52,7 @@ export function ConversationRow({
           conversation.type === "group",
           mine,
           last.event,
+          last.attachment_kind,
         )
       : "";
 
@@ -60,10 +61,10 @@ export function ConversationRow({
       type="button"
       onClick={() => onSelect(conversation.id)}
       aria-current={selected ? "true" : undefined}
-      className={`mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-2.5 text-left transition-colors ${
+      className={`mx-2 flex w-[calc(100%-1rem)] items-start gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
         selected ? "bg-surface-selected" : "hover:bg-surface-hover"
       }`}
-      style={{ height: 64 }}
+      style={{ minHeight: 68 }}
     >
       <Avatar
         name={conversation.title}
@@ -90,7 +91,7 @@ export function ConversationRow({
         </div>
 
         <div
-          className="mt-0.5 flex items-center gap-1.5"
+          className="mt-0.5 flex items-start gap-1.5"
           style={{ ["--status-on-fill" as string]: "var(--surface-raised)" }}
         >
           {typing ? (
@@ -100,8 +101,9 @@ export function ConversationRow({
               <TypingDot delay="320ms" />
             </span>
           ) : (
+            // Signal Desktop wraps the preview onto a second line.
             <span
-              className={`truncate text-[12.5px] ${
+              className={`line-clamp-2 min-w-0 break-words text-[12.5px] leading-[1.35] ${
                 isRequest ? "font-semibold text-ink" : unread ? "text-ink" : "text-ink-2"
               } ${last?.type === "system" && !last.event && !isRequest ? "italic" : ""}`}
             >

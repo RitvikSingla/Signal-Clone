@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, func, inspect, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -57,6 +57,7 @@ def _loaded(stmt: Select) -> Select:
     return stmt.options(
         selectinload(Conversation.members).selectinload(ConversationMember.user),
         selectinload(Conversation.last_message).selectinload(Message.sender),
+        selectinload(Conversation.last_message).selectinload(Message.attachments),
     )
 
 
@@ -102,6 +103,22 @@ def _peer_of(conversation: Conversation, me_id: str) -> User | None:
     return None
 
 
+def _attachment_kind(message: Message) -> str | None:
+    """"sticker" or "voice" for the list preview, read only if already
+    loaded: a lazy load here would fail inside the async session."""
+    state = inspect(message)
+    if "attachments" in state.unloaded:
+        return None
+    first = message.attachments[0] if message.attachments else None
+    if first is None:
+        return None
+    if first.content_type.startswith("image/") and first.file_name.startswith("sticker-"):
+        return "sticker"
+    if first.content_type.startswith("audio/"):
+        return "voice"
+    return None
+
+
 def _preview(message: Message | None) -> MessagePreview | None:
     if message is None:
         return None
@@ -114,6 +131,7 @@ def _preview(message: Message | None) -> MessagePreview | None:
         status=message.status,
         is_deleted=message.deleted_at is not None,
         event=message.event,
+        attachment_kind=_attachment_kind(message),
         created_at=message.created_at,
     )
 

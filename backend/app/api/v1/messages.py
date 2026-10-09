@@ -33,9 +33,10 @@ async def search(
     db: DbSession,
     q: Annotated[str, Query(min_length=1, max_length=100)],
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    conversation_id: Annotated[str | None, Query()] = None,
 ) -> list[MessageSearchHit]:
-    """Full-text search across every thread the caller belongs to."""
-    return await message_service.search_messages(db, user, q, limit)
+    """Full-text search across the caller's threads, or within one thread."""
+    return await message_service.search_messages(db, user, q, limit, conversation_id)
 
 
 @router.patch("/messages/{message_id}", response_model=MessageOut)

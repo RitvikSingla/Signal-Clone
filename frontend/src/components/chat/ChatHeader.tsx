@@ -7,7 +7,7 @@
  * call buttons are absent, exactly as in the recording; they appear the
  * moment the request is accepted.
  *
- * Search swaps the name for a field with previous / next and a match count.
+ * Search moves to the chat list's field, scoped to this chat with a chip.
  */
 
 import { useState } from "react";
@@ -16,9 +16,6 @@ import { Avatar } from "@/components/ui/Avatar";
 import {
   ArchiveIcon,
   BackIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  CloseIcon,
   InfoIcon,
   MoreIcon,
   PhoneIcon,
@@ -35,11 +32,11 @@ import type { ConversationDetail } from "@/lib/types";
 type ChatHeaderProps = {
   conversation: ConversationDetail;
   isRequest: boolean;
-  search: { query: string; index: number; total: number } | null;
-  onSearchChange: (search: { query: string; index: number } | null) => void;
+  /** Opens chat-scoped search in the left pane, as Signal Desktop does. */
+  onSearch: () => void;
   onBack: () => void;
   onOpenInfo: () => void;
-  onComingSoon: (feature: string) => void;
+  onCall: (kind: "video" | "voice") => void;
   onTogglePin: () => void;
   onArchive: () => void;
   onDisappearing: (seconds: number) => void;
@@ -59,11 +56,10 @@ const TIMER_OPTIONS: [number, string][] = [
 export function ChatHeader({
   conversation,
   isRequest,
-  search,
-  onSearchChange,
+  onSearch,
   onBack,
   onOpenInfo,
-  onComingSoon,
+  onCall,
   onTogglePin,
   onArchive,
   onDisappearing,
@@ -105,116 +101,54 @@ export function ChatHeader({
         <BackIcon size={19} />
       </button>
 
-      {search ? (
-        <div className="flex min-w-0 flex-1 items-center gap-1">
-          <label className="relative block min-w-0 flex-1">
-            <span className="sr-only">Search in chat</span>
-            <SearchIcon size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2" />
-            <input
-              autoFocus
-              type="search"
-              value={search.query}
-              onChange={(event) => onSearchChange({ query: event.target.value, index: 0 })}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && search.total > 0) {
-                  const step = event.shiftKey ? -1 : 1;
-                  onSearchChange({
-                    query: search.query,
-                    index: (search.index + step + search.total) % search.total,
-                  });
-                }
-                if (event.key === "Escape") onSearchChange(null);
-              }}
-              placeholder="Search"
-              className="h-[30px] w-full rounded-md bg-surface-sunken pl-8 pr-16 text-[13px] text-ink outline-none placeholder:text-ink-2 focus:ring-2 focus:ring-ultramarine"
-            />
-            {search.query && (
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[12px] tabular-nums text-ink-2">
-                {search.total === 0 ? "0 / 0" : `${search.index + 1} / ${search.total}`}
-              </span>
-            )}
-          </label>
-          <HeaderButton
-            label="Previous match"
-            onClick={() =>
-              search.total &&
-              onSearchChange({
-                query: search.query,
-                index: (search.index + 1) % search.total,
-              })
-            }
-          >
-            <ChevronUpIcon size={17} />
-          </HeaderButton>
-          <HeaderButton
-            label="Next match"
-            onClick={() =>
-              search.total &&
-              onSearchChange({
-                query: search.query,
-                index: (search.index - 1 + search.total) % search.total,
-              })
-            }
-          >
-            <ChevronDownIcon size={17} />
-          </HeaderButton>
-          <HeaderButton label="Close search" onClick={() => onSearchChange(null)}>
-            <CloseIcon size={16} />
-          </HeaderButton>
-        </div>
-      ) : (
-        <>
-          <button
-            type="button"
-            onClick={onOpenInfo}
-            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 pr-2 text-left"
-          >
-            <Avatar
-              name={conversation.title}
-              colorKey={conversation.avatar_color}
-              url={conversation.avatar_url}
-              size={28}
-              online={conversation.peer?.is_online ?? false}
-            />
-            <span className="truncate text-[13.5px] font-semibold text-ink">
-              {conversation.title}
+      <>
+        <button
+          type="button"
+          onClick={onOpenInfo}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-1 pr-2 text-left"
+        >
+          <Avatar
+            name={conversation.title}
+            colorKey={conversation.avatar_color}
+            url={conversation.avatar_url}
+            size={28}
+            online={conversation.peer?.is_online ?? false}
+          />
+          <span className="truncate text-[13.5px] font-semibold text-ink">
+            {conversation.title}
+          </span>
+          {conversation.disappearing_seconds > 0 && (
+            <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-ink-2">
+              <TimerIcon size={12} />
+              {durationLabel(conversation.disappearing_seconds)}
             </span>
-            {conversation.disappearing_seconds > 0 && (
-              <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-ink-2">
-                <TimerIcon size={12} />
-                {durationLabel(conversation.disappearing_seconds)}
-              </span>
-            )}
-          </button>
+          )}
+        </button>
 
-          <div className="flex shrink-0 items-center gap-0.5">
-            {!isRequest && (
-              <>
-                <HeaderButton label="Start video call" onClick={() => onComingSoon("Video calls")}>
-                  <VideoIcon size={19} />
-                </HeaderButton>
-                <HeaderButton label="Start voice call" onClick={() => onComingSoon("Voice calls")}>
-                  <PhoneIcon size={17} />
-                </HeaderButton>
-              </>
-            )}
-            <HeaderButton
-              label="Search in chat"
-              onClick={() => onSearchChange({ query: "", index: 0 })}
-            >
-              <SearchIcon size={17} />
-            </HeaderButton>
-            <div className="relative">
-              <HeaderButton label="More options" onClick={() => setMenuOpen((open) => !open)}>
-                <MoreIcon size={17} />
+        <div className="flex shrink-0 items-center gap-0.5">
+          {!isRequest && (
+            <>
+              <HeaderButton label="Start video call" onClick={() => onCall("video")}>
+                <VideoIcon size={19} />
               </HeaderButton>
-              {menuOpen && (
-                <Menu align="right" items={menuItems} onClose={() => setMenuOpen(false)} />
-              )}
-            </div>
+              <HeaderButton label="Start voice call" onClick={() => onCall("voice")}>
+                <PhoneIcon size={17} />
+              </HeaderButton>
+            </>
+          )}
+          <HeaderButton label="Search in chat" onClick={onSearch}>
+            <SearchIcon size={17} />
+          </HeaderButton>
+          <div className="relative">
+            <HeaderButton label="More options" onClick={() => setMenuOpen((open) => !open)}>
+              <MoreIcon size={17} />
+            </HeaderButton>
+            {menuOpen && (
+              <Menu align="right" items={menuItems} onClose={() => setMenuOpen(false)} />
+            )}
           </div>
-        </>
-      )}
+        </div>
+      </>
     </header>
   );
 }

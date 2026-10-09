@@ -211,19 +211,20 @@ function RequestDialogs({
 
   if (pending === "block-or-report") {
     return (
-      <Modal onClose={onClose} label="Block or report" width={340}>
-        <h2 className="text-center text-[15px] font-semibold text-ink">
-          Block or report {name}?
-        </h2>
-        <div className="mt-5 flex flex-col gap-2">
-          <DialogButton variant="danger" onClick={() => onPick("block")}>
-            Block
-          </DialogButton>
-          <DialogButton variant="secondary" onClick={() => onPick("report")}>
-            Report spam
-          </DialogButton>
+      <Modal onClose={onClose} label="Block or report" width={320}>
+        <p className="text-center text-[13px] leading-[1.45] text-ink">
+          You accepted a message request from {name}. If this was a mistake, you can choose an
+          action below.
+        </p>
+        <div className="mt-4 flex gap-2">
           <DialogButton variant="secondary" onClick={onClose}>
             Cancel
+          </DialogButton>
+          <DialogButton variant="danger" onClick={() => onPick("report")}>
+            Report…
+          </DialogButton>
+          <DialogButton variant="danger" onClick={() => onPick("block")}>
+            Block
           </DialogButton>
         </div>
       </Modal>

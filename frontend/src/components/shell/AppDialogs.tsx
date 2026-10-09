@@ -9,6 +9,8 @@
 import { useMemo } from "react";
 
 import { SafetyTipsDialog } from "@/components/chat/MessageRequest";
+import { StickerPackCreator } from "@/components/shell/StickerPackCreator";
+import { PermissionPrompt } from "@/components/ui/WindowDialog";
 import { SignalMark } from "@/components/ui/Icons";
 import { DialogButton, Modal } from "@/components/ui/Modal";
 import { useToasts } from "@/components/ui/Toasts";
@@ -52,6 +54,22 @@ const SHORTCUTS: { group: string; rows: [string, string[]][] }[] = [
 ];
 
 export function AppDialogs({ socketStatus }: { socketStatus: string }) {
+  return (
+    <>
+      <MenuDialogs socketStatus={socketStatus} />
+      <StickerCreatorHost />
+      <PermissionPrompt />
+    </>
+  );
+}
+
+function StickerCreatorHost() {
+  const open = useUi((state) => state.stickerCreatorOpen);
+  const setOpen = useUi((state) => state.setStickerCreatorOpen);
+  return open ? <StickerPackCreator onClose={() => setOpen(false)} /> : null;
+}
+
+function MenuDialogs({ socketStatus }: { socketStatus: string }) {
   const dialog = useUi((state) => state.dialog);
   const openDialog = useUi((state) => state.openDialog);
   const close = () => openDialog(null);

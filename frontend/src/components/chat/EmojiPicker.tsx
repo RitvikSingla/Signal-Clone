@@ -18,6 +18,9 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
+import { mediaUrl } from "@/lib/endpoints";
+import { useUi, type CustomSticker } from "@/store/ui";
+
 import {
   AngryIcon,
   BallIcon,
@@ -54,6 +57,8 @@ type RawGroup = {
 type EmojiPickerProps = {
   onEmoji: (emoji: string) => void;
   onSticker: (sticker: string) => void;
+  /** A sticker from a pack made in the Sticker Pack Creator. */
+  onCustomSticker: (sticker: CustomSticker) => void;
   onGif: (url: string) => void;
   onClose: () => void;
 };
@@ -65,7 +70,13 @@ const SKIN_KEY = "signal-emoji-skin";
 /** Newer than this and Windows draws an empty box, so leave them out. */
 const MAX_EMOJI_VERSION = 14;
 
-export function EmojiPicker({ onEmoji, onSticker, onGif, onClose }: EmojiPickerProps) {
+export function EmojiPicker({
+  onEmoji,
+  onSticker,
+  onCustomSticker,
+  onGif,
+  onClose,
+}: EmojiPickerProps) {
   const [tab, setTab] = useState<Tab>("emoji");
   const panel = useRef<HTMLDivElement>(null);
 
@@ -103,9 +114,7 @@ export function EmojiPicker({ onEmoji, onSticker, onGif, onClose }: EmojiPickerP
             onClick={() => setTab(value)}
             aria-pressed={tab === value}
             className={`h-[26px] flex-1 rounded-full text-[12.5px] font-semibold transition ${
-              tab === value
-                ? "text-ink ring-[1.5px] ring-ink"
-                : "text-ink hover:bg-surface-hover"
+              tab === value ? "text-ink ring-[1.5px] ring-ink" : "text-ink hover:bg-surface-hover"
             }`}
           >
             {value === "emoji" ? "Emoji" : value === "stickers" ? "Stickers" : "GIFs"}
@@ -114,7 +123,9 @@ export function EmojiPicker({ onEmoji, onSticker, onGif, onClose }: EmojiPickerP
       </div>
 
       {tab === "emoji" && <EmojiTab onEmoji={onEmoji} />}
-      {tab === "stickers" && <StickersTab onSticker={onSticker} />}
+      {tab === "stickers" && (
+        <StickersTab onSticker={onSticker} onCustomSticker={onCustomSticker} />
+      )}
       {tab === "gifs" && <GifsTab onGif={onGif} />}
     </div>
   );
@@ -174,10 +185,20 @@ const SECTION_META: { id: string; title: string; groups: string[]; icon: ReactNo
     groups: ["smileys_emotion", "people_body"],
     icon: <EmojiIcon size={17} />,
   },
-  { id: "animals", title: "Animals & Nature", groups: ["animals_nature"], icon: <PawIcon size={17} /> },
+  {
+    id: "animals",
+    title: "Animals & Nature",
+    groups: ["animals_nature"],
+    icon: <PawIcon size={17} />,
+  },
   { id: "food", title: "Food & Drink", groups: ["food_drink"], icon: <FoodIcon size={17} /> },
   { id: "activity", title: "Activities", groups: ["activities"], icon: <BallIcon size={17} /> },
-  { id: "travel", title: "Travel & Places", groups: ["travel_places"], icon: <CarIcon size={17} /> },
+  {
+    id: "travel",
+    title: "Travel & Places",
+    groups: ["travel_places"],
+    icon: <CarIcon size={17} />,
+  },
   { id: "objects", title: "Objects", groups: ["objects"], icon: <BulbIcon size={17} /> },
   { id: "symbols", title: "Symbols", groups: ["symbols"], icon: <SymbolsIcon size={17} /> },
   { id: "flags", title: "Flags", groups: ["flags"], icon: <FlagIcon size={17} /> },
@@ -298,7 +319,12 @@ function EmojiTab({ onEmoji }: { onEmoji: (emoji: string) => void }) {
                 <SectionTitle>Recently Used</SectionTitle>
                 <div className="grid grid-cols-8">
                   {recents.map((emoji) => (
-                    <EmojiButton key={emoji} emoji={emoji} label={emoji} onClick={() => onEmoji(emoji)} />
+                    <EmojiButton
+                      key={emoji}
+                      emoji={emoji}
+                      label={emoji}
+                      onClick={() => onEmoji(emoji)}
+                    />
                   ))}
                 </div>
               </section>
@@ -423,37 +449,104 @@ const STICKER_PACKS: StickerPack[] = [
     id: "pond",
     title: "Pond Pals",
     cover: "\u{1F438}",
-    stickers: ["\u{1F438}", "\u{1F422}", "\u{1F986}", "\u{1F41F}", "\u{1F40A}", "\u{1F98E}", "\u{1F995}", "\u{1F996}", "\u{1F40D}", "\u{1F433}", "\u{1F419}", "\u{1F980}"],
+    stickers: [
+      "\u{1F438}",
+      "\u{1F422}",
+      "\u{1F986}",
+      "\u{1F41F}",
+      "\u{1F40A}",
+      "\u{1F98E}",
+      "\u{1F995}",
+      "\u{1F996}",
+      "\u{1F40D}",
+      "\u{1F433}",
+      "\u{1F419}",
+      "\u{1F980}",
+    ],
   },
   {
     id: "critters",
     title: "Cuddly Critters",
     cover: "\u{1F43C}",
-    stickers: ["\u{1F43C}", "\u{1F428}", "\u{1F431}", "\u{1F436}", "\u{1F98A}", "\u{1F430}", "\u{1F439}", "\u{1F43B}", "\u{1F981}", "\u{1F42F}", "\u{1F427}", "\u{1F984}"],
+    stickers: [
+      "\u{1F43C}",
+      "\u{1F428}",
+      "\u{1F431}",
+      "\u{1F436}",
+      "\u{1F98A}",
+      "\u{1F430}",
+      "\u{1F439}",
+      "\u{1F43B}",
+      "\u{1F981}",
+      "\u{1F42F}",
+      "\u{1F427}",
+      "\u{1F984}",
+    ],
   },
   {
     id: "moods",
     title: "Big Moods",
     cover: "\u{1F973}",
-    stickers: ["\u{1F973}", "\u{1F60D}", "\u{1F602}", "\u{1F62D}", "\u{1F631}", "\u{1F92F}", "\u{1F634}", "\u{1F60E}", "\u{1F914}", "\u{1F644}", "\u{1F917}", "\u{1F621}"],
+    stickers: [
+      "\u{1F973}",
+      "\u{1F60D}",
+      "\u{1F602}",
+      "\u{1F62D}",
+      "\u{1F631}",
+      "\u{1F92F}",
+      "\u{1F634}",
+      "\u{1F60E}",
+      "\u{1F914}",
+      "\u{1F644}",
+      "\u{1F917}",
+      "\u{1F621}",
+    ],
   },
   {
     id: "signals",
     title: "Hand Signals",
     cover: "\u{1F44B}",
-    stickers: ["\u{1F44B}", "\u{1F44D}", "\u{1F44E}", "\u{1F44F}", "\u{1F64F}", "\u{1F64C}", "\u{1F91D}", "\u{270C}\u{FE0F}", "\u{1F918}", "\u{1F44C}", "\u{1F4AA}", "\u{1FAF6}"],
+    stickers: [
+      "\u{1F44B}",
+      "\u{1F44D}",
+      "\u{1F44E}",
+      "\u{1F44F}",
+      "\u{1F64F}",
+      "\u{1F64C}",
+      "\u{1F91D}",
+      "\u{270C}\u{FE0F}",
+      "\u{1F918}",
+      "\u{1F44C}",
+      "\u{1F4AA}",
+      "\u{1FAF6}",
+    ],
   },
 ];
 
-function StickersTab({ onSticker }: { onSticker: (sticker: string) => void }) {
+function StickersTab({
+  onSticker,
+  onCustomSticker,
+}: {
+  onSticker: (sticker: string) => void;
+  onCustomSticker: (sticker: CustomSticker) => void;
+}) {
   const [query, setQuery] = useState("");
-  const [packId, setPackId] = useState(STICKER_PACKS[0].id);
+  const custom = useUi((state) => state.stickerPacks);
+  const setCreatorOpen = useUi((state) => state.setStickerCreatorOpen);
+  const [packId, setPackId] = useState(custom[0]?.id ?? STICKER_PACKS[0].id);
   const scroller = useRef<HTMLDivElement>(null);
   const needle = query.trim().toLowerCase();
 
   const packs = needle
     ? STICKER_PACKS.filter((pack) => pack.title.toLowerCase().includes(needle))
     : STICKER_PACKS;
+  // Searching matches a custom pack's title or any of its emoji.
+  const customPacks = custom.filter(
+    (pack) =>
+      !needle ||
+      pack.title.toLowerCase().includes(needle) ||
+      pack.stickers.some((s) => s.emoji && needle.includes(s.emoji)),
+  );
 
   function jumpTo(id: string) {
     setPackId(id);
@@ -465,9 +558,29 @@ function StickersTab({ onSticker }: { onSticker: (sticker: string) => void }) {
     <>
       <SearchField value={query} onChange={setQuery} placeholder="Search stickers" />
       <div ref={scroller} className="relative min-h-0 flex-1 overflow-y-auto px-2.5 pb-2">
-        {packs.length === 0 && (
+        {packs.length === 0 && customPacks.length === 0 && (
           <p className="py-10 text-center text-[13px] text-ink-2">No sticker packs found</p>
         )}
+        {customPacks.map((pack) => (
+          <section key={pack.id} data-pack={pack.id}>
+            <SectionTitle>{pack.title}</SectionTitle>
+            <div className="grid grid-cols-4 gap-1">
+              {pack.stickers.map((sticker) => (
+                <button
+                  key={sticker.url}
+                  type="button"
+                  onClick={() => onCustomSticker(sticker)}
+                  aria-label={`Send sticker ${sticker.emoji}`}
+                  title={sticker.emoji}
+                  className="flex aspect-square items-center justify-center rounded-lg p-1 transition hover:scale-105 hover:bg-surface-hover"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={mediaUrl(sticker.url)} alt="" className="size-full object-contain" />
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
         {packs.map((pack) => (
           <section key={pack.id} data-pack={pack.id}>
             <SectionTitle>{pack.title}</SectionTitle>
@@ -488,13 +601,29 @@ function StickersTab({ onSticker }: { onSticker: (sticker: string) => void }) {
         ))}
       </div>
       <BottomBar>
+        {custom.map((pack) => (
+          <BarButton
+            key={pack.id}
+            label={pack.title}
+            active={pack.id === packId}
+            onClick={() => jumpTo(pack.id)}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={mediaUrl(pack.cover)} alt="" className="size-5 object-contain" />
+          </BarButton>
+        ))}
         {STICKER_PACKS.map((pack) => (
-          <BarButton key={pack.id} label={pack.title} active={pack.id === packId} onClick={() => jumpTo(pack.id)}>
+          <BarButton
+            key={pack.id}
+            label={pack.title}
+            active={pack.id === packId}
+            onClick={() => jumpTo(pack.id)}
+          >
             <span className="text-[18px] leading-none">{pack.cover}</span>
           </BarButton>
         ))}
         <span className="flex-1" />
-        <BarButton label="Add a sticker pack" onClick={() => window.open("https://signalstickers.org", "_blank", "noopener")}>
+        <BarButton label="Create a sticker pack" onClick={() => setCreatorOpen(true)}>
           <PlusIcon size={16} />
         </BarButton>
       </BottomBar>
@@ -540,31 +669,34 @@ function GifsTab({ onGif }: { onGif: (url: string) => void }) {
   useEffect(() => {
     if (!GIPHY_KEY) return;
     const controller = new AbortController();
-    const timer = setTimeout(() => {
-      setState("loading");
-      const base = "https://api.giphy.com/v1/gifs";
-      const params = new URLSearchParams({ api_key: GIPHY_KEY, limit: "24", rating: "pg-13" });
-      const url = activeQuery
-        ? `${base}/search?${params}&q=${encodeURIComponent(activeQuery)}`
-        : `${base}/trending?${params}`;
-      fetch(url, { signal: controller.signal })
-        .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-        .then((body: { data: GiphyItem[] }) => {
-          setGifs(
-            body.data.map((item) => ({
-              id: item.id,
-              title: item.title,
-              preview: item.images.fixed_width.url,
-              full: (item.images.downsized_medium ?? item.images.original).url,
-            })),
-          );
-          setState("idle");
-        })
-        .catch((error) => {
-          if (error instanceof DOMException && error.name === "AbortError") return;
-          setState("error");
-        });
-    }, needle ? 300 : 0);
+    const timer = setTimeout(
+      () => {
+        setState("loading");
+        const base = "https://api.giphy.com/v1/gifs";
+        const params = new URLSearchParams({ api_key: GIPHY_KEY, limit: "24", rating: "pg-13" });
+        const url = activeQuery
+          ? `${base}/search?${params}&q=${encodeURIComponent(activeQuery)}`
+          : `${base}/trending?${params}`;
+        fetch(url, { signal: controller.signal })
+          .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+          .then((body: { data: GiphyItem[] }) => {
+            setGifs(
+              body.data.map((item) => ({
+                id: item.id,
+                title: item.title,
+                preview: item.images.fixed_width.url,
+                full: (item.images.downsized_medium ?? item.images.original).url,
+              })),
+            );
+            setState("idle");
+          })
+          .catch((error) => {
+            if (error instanceof DOMException && error.name === "AbortError") return;
+            setState("error");
+          });
+      },
+      needle ? 300 : 0,
+    );
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -607,7 +739,10 @@ function GifsTab({ onGif }: { onGif: (url: string) => void }) {
           </div>
         )}
         <span className="pointer-events-none sticky bottom-1 left-0 mx-auto mt-2 flex w-fit items-center gap-1 rounded-full bg-black/85 px-3 py-1 text-[8px] font-semibold uppercase tracking-wider text-white/70">
-          Powered by <span className="text-[12px] font-black normal-case tracking-tight text-white">GIPHY</span>
+          Powered by{" "}
+          <span className="text-[12px] font-black normal-case tracking-tight text-white">
+            GIPHY
+          </span>
         </span>
       </div>
       <BottomBar>
@@ -648,7 +783,10 @@ function SearchField({
     <div className="shrink-0 px-2.5 pb-1.5">
       <label className="relative block">
         <span className="sr-only">{placeholder}</span>
-        <SearchIcon size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2" />
+        <SearchIcon
+          size={14}
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-2"
+        />
         <input
           ref={inputRef}
           type="search"
@@ -706,5 +844,7 @@ function BarButton({
 }
 
 function Spinner() {
-  return <span className="size-7 animate-spin rounded-full border-2 border-ink-3 border-t-transparent" />;
+  return (
+    <span className="size-7 animate-spin rounded-full border-2 border-ink-3 border-t-transparent" />
+  );
 }

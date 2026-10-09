@@ -19,10 +19,12 @@
 
 import { useState } from "react";
 
-import { AttachmentContent } from "@/components/chat/Attachments";
+import { AttachmentContent, isSticker } from "@/components/chat/Attachments";
+import { mediaUrl } from "@/lib/endpoints";
 import { ReactionPicker } from "@/components/chat/EmojiPicker";
 import {
   CopyIcon,
+  DownloadIcon,
   ForwardIcon,
   InfoIcon,
   MoreIcon,
@@ -49,6 +51,7 @@ export type BubbleActions = {
   onInfo: (message: Message) => void;
   onDelete: (message: Message) => void;
   onOpenMedia: (message: Message, index: number) => void;
+  onDownload: (message: Message) => void;
 };
 
 type MessageBubbleProps = {
@@ -74,7 +77,8 @@ type MessageBubbleProps = {
 /** The six Signal offers on the reaction bar, in the same order. */
 const QUICK_REACTIONS = ["❤️", "\u{1F44D}", "\u{1F44E}", "\u{1F602}", "\u{1F62E}", "\u{1F622}"];
 
-const EMOJI_ONLY = /^(?:\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?(?:‍\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?)*\s*){1,3}$/u;
+const EMOJI_ONLY =
+  /^(?:\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?(?:‍\p{Extended_Pictographic}(?:️|\p{Emoji_Modifier})?)*\s*){1,3}$/u;
 const GIF_URL = /^https:\/\/media\d*\.giphy\.com\/\S+$/;
 
 /** Signal lets you edit your own text messages for 24 hours. */
@@ -103,13 +107,14 @@ export function MessageBubble({
   const body = message.body ?? "";
   const media = message.attachments ?? [];
   const hasMedia = media.length > 0 && !deleted;
+  const sticker = hasMedia && !body && media.length === 1 && isSticker(media[0]);
   const jumbo = !deleted && !hasMedia && EMOJI_ONLY.test(body.trim());
   const gif = !deleted && !hasMedia && GIF_URL.test(body.trim());
   const visualOnly =
     hasMedia &&
     !body &&
     media.every((a) => a.content_type.startsWith("image/") || a.content_type.startsWith("video/"));
-  const bare = jumbo || gif;
+  const bare = jumbo || gif || sticker;
 
   const tail = mine
     ? endsRun
@@ -133,7 +138,13 @@ export function MessageBubble({
   const meta = (
     <span
       className={`flex shrink-0 items-center gap-1 text-[11px] tabular-nums ${
-        bare ? "text-ink-2" : visualOnly ? "text-white drop-shadow" : mine ? "text-white/80" : "text-ink-2"
+        bare
+          ? "text-ink-2"
+          : visualOnly
+            ? "text-white drop-shadow"
+            : mine
+              ? "text-white/80"
+              : "text-ink-2"
       }`}
       title={new Date(message.created_at).toLocaleString()}
       style={{ ["--status-on-fill" as string]: bare ? "var(--surface)" : "var(--bubble-out)" }}
@@ -168,7 +179,13 @@ export function MessageBubble({
         >
           {selected && (
             <svg width="10" height="10" viewBox="0 0 12 12">
-              <path d="m2.5 6.2 2.2 2.2 4.8-4.8" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
+              <path
+                d="m2.5 6.2 2.2 2.2 4.8-4.8"
+                fill="none"
+                stroke="#fff"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
             </svg>
           )}
         </span>
@@ -216,7 +233,17 @@ export function MessageBubble({
             </div>
           )}
 
-          {jumbo ? (
+          {sticker ? (
+            <div className={`flex flex-col gap-1 ${mine ? "items-end" : "items-start"}`}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={mediaUrl(media[0].url)}
+                alt="Sticker"
+                className="size-[150px] object-contain"
+              />
+              {meta}
+            </div>
+          ) : jumbo ? (
             <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
               <span className="text-[48px] leading-[1.1]">{body.trim()}</span>
               {meta}
@@ -298,6 +325,11 @@ export function MessageBubble({
           <ActionButton label="React" onClick={() => setBarOpen((open) => !open)}>
             <ReactIcon size={17} />
           </ActionButton>
+          {hasMedia && !sticker && (
+            <ActionButton label="Download" onClick={() => actions.onDownload(message)}>
+              <DownloadIcon size={16} />
+            </ActionButton>
+          )}
           <ActionButton label="Reply" onClick={() => actions.onReply(message)}>
             <ReplyIcon size={16} />
           </ActionButton>
@@ -311,19 +343,55 @@ export function MessageBubble({
                 placement="above"
                 onClose={() => setMenuOpen(false)}
                 items={[
-                  { label: "Forward", icon: <ForwardIcon size={15} />, onSelect: () => actions.onForward(message) },
+                  {
+                    label: "Forward",
+                    icon: <ForwardIcon size={15} />,
+                    onSelect: () => actions.onForward(message),
+                  },
                   ...(canEdit
-                    ? [{ label: "Edit", icon: <PencilIcon size={15} />, onSelect: () => actions.onEdit(message) }]
+                    ? [
+                        {
+                          label: "Edit",
+                          icon: <PencilIcon size={15} />,
+                          onSelect: () => actions.onEdit(message),
+                        },
+                      ]
                     : []),
-                  { label: "Select", icon: <SelectIcon />, onSelect: () => actions.onSelect(message) },
+                  {
+                    label: "Select",
+                    icon: <SelectIcon />,
+                    onSelect: () => actions.onSelect(message),
+                  },
                   ...(body && !gif
-                    ? [{ label: "Copy text", icon: <CopyIcon size={15} />, onSelect: () => actions.onCopy(message) }]
+                    ? [
+                        {
+                          label: "Copy text",
+                          icon: <CopyIcon size={15} />,
+                          onSelect: () => actions.onCopy(message),
+                        },
+                      ]
                     : []),
                   pinned
-                    ? { label: "Unpin", icon: <PinIcon size={15} strokeWidth={1.7} />, onSelect: () => actions.onUnpin(message) }
-                    : { label: "Pin", icon: <PinIcon size={15} strokeWidth={1.7} />, onSelect: () => actions.onPin(message) },
-                  { label: "Info", icon: <InfoIcon size={15} />, onSelect: () => actions.onInfo(message) },
-                  { label: "Delete", icon: <TrashIcon size={15} />, onSelect: () => actions.onDelete(message) },
+                    ? {
+                        label: "Unpin",
+                        icon: <PinIcon size={15} strokeWidth={1.7} />,
+                        onSelect: () => actions.onUnpin(message),
+                      }
+                    : {
+                        label: "Pin",
+                        icon: <PinIcon size={15} strokeWidth={1.7} />,
+                        onSelect: () => actions.onPin(message),
+                      },
+                  {
+                    label: "Info",
+                    icon: <InfoIcon size={15} />,
+                    onSelect: () => actions.onInfo(message),
+                  },
+                  {
+                    label: "Delete",
+                    icon: <TrashIcon size={15} />,
+                    onSelect: () => actions.onDelete(message),
+                  },
                 ]}
               />
             )}
@@ -336,7 +404,15 @@ export function MessageBubble({
 
 function SelectIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden
+    >
       <circle cx="12" cy="12" r="9" />
       <path d="m8 12.2 2.7 2.7L16 9.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -438,19 +514,14 @@ function QuotedStrip({
       <div className="line-clamp-2 opacity-85">
         {quoted.is_deleted
           ? "This message was deleted."
-          : quoted.body || (quoted.type === "image" ? "📷 Photo" : quoted.type === "file" ? "📎 File" : "")}
+          : quoted.body ||
+            (quoted.type === "image" ? "📷 Photo" : quoted.type === "file" ? "📎 File" : "")}
       </div>
     </button>
   );
 }
 
-function ReactionPills({
-  reactions,
-  mine,
-}: {
-  reactions: Message["reactions"];
-  mine: boolean;
-}) {
+function ReactionPills({ reactions, mine }: { reactions: Message["reactions"]; mine: boolean }) {
   const grouped = new Map<string, number>();
   for (const reaction of reactions) {
     grouped.set(reaction.emoji, (grouped.get(reaction.emoji) ?? 0) + 1);

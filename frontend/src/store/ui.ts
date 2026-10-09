@@ -30,6 +30,17 @@ export type LocalStory = {
   created_at: string;
 };
 
+export type CustomSticker = { url: string; emoji: string };
+
+export type CustomStickerPack = {
+  id: string;
+  title: string;
+  author: string;
+  cover: string;
+  stickers: CustomSticker[];
+  created_at: string;
+};
+
 export type CallLink = {
   id: string;
   name: string;
@@ -46,6 +57,11 @@ type UiState = {
   viewedStories: string[];
   myStories: LocalStory[];
   callLinks: CallLink[];
+  stickerPacks: CustomStickerPack[];
+  /** Set once the browser has granted the microphone, so Signal's own
+   *  "Allow Access" step is not shown again. */
+  micAllowed: boolean;
+  stickerCreatorOpen: boolean;
 
   toggleTabs: () => void;
   setZoom: (zoom: number) => void;
@@ -54,6 +70,9 @@ type UiState = {
   markStoryViewed: (id: string) => void;
   addStory: (story: LocalStory) => void;
   addCallLink: (link: CallLink) => void;
+  addStickerPack: (pack: CustomStickerPack) => void;
+  setMicAllowed: (allowed: boolean) => void;
+  setStickerCreatorOpen: (open: boolean) => void;
 };
 
 const ZOOM_STEPS = [0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
@@ -75,6 +94,9 @@ export const useUi = create<UiState>()(
       viewedStories: [],
       myStories: [],
       callLinks: [],
+      stickerPacks: [],
+      micAllowed: false,
+      stickerCreatorOpen: false,
 
       toggleTabs: () => set((state) => ({ tabsHidden: !state.tabsHidden })),
       setZoom: (zoom) => set({ zoom }),
@@ -94,6 +116,9 @@ export const useUi = create<UiState>()(
         ),
       addStory: (story) => set((state) => ({ myStories: [...state.myStories, story] })),
       addCallLink: (link) => set((state) => ({ callLinks: [link, ...state.callLinks] })),
+      addStickerPack: (pack) => set((state) => ({ stickerPacks: [...state.stickerPacks, pack] })),
+      setMicAllowed: (micAllowed) => set({ micAllowed }),
+      setStickerCreatorOpen: (stickerCreatorOpen) => set({ stickerCreatorOpen }),
     }),
     {
       name: "signal-ui",
@@ -106,6 +131,8 @@ export const useUi = create<UiState>()(
         viewedStories: state.viewedStories,
         myStories: state.myStories,
         callLinks: state.callLinks,
+        stickerPacks: state.stickerPacks,
+        micAllowed: state.micAllowed,
       }),
     },
   ),

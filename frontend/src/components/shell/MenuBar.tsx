@@ -19,7 +19,6 @@ import { nextZoom, useUi } from "@/store/ui";
 
 type MenuBarProps = {
   onOpenSettings: () => void;
-  onSignOut: () => void;
 };
 
 const isMac = typeof navigator !== "undefined" && /Mac/i.test(navigator.platform);
@@ -48,12 +47,24 @@ export function toggleFullScreen() {
   else void document.documentElement.requestFullscreen?.();
 }
 
-export function MenuBar({ onOpenSettings, onSignOut }: MenuBarProps) {
+/**
+ * A page can only close a window it opened itself, so Quit tries to close
+ * the tab and, if the browser keeps it open, says how to quit instead.
+ */
+function quit() {
+  window.close();
+  setTimeout(() => {
+    if (!window.closed) useToasts.getState().push("Close this tab to quit Signal.");
+  }, 150);
+}
+
+export function MenuBar({ onOpenSettings }: MenuBarProps) {
   const [open, setOpen] = useState<string | null>(null);
   const bar = useRef<HTMLDivElement>(null);
   const zoom = useUi((state) => state.zoom);
   const setZoom = useUi((state) => state.setZoom);
   const openDialog = useUi((state) => state.openDialog);
+  const setStickerCreatorOpen = useUi((state) => state.setStickerCreatorOpen);
 
   useEffect(() => {
     if (!open) return;
@@ -75,13 +86,10 @@ export function MenuBar({ onOpenSettings, onSignOut }: MenuBarProps) {
     {
       label: "File",
       items: [
-        {
-          label: "Create/upload sticker pack…",
-          onSelect: () => openExternal("https://support.signal.org/hc/articles/360031836512"),
-        },
-        { label: "Settings…", shortcut: `${MOD}+,`, onSelect: onOpenSettings },
+        { label: "Create/upload sticker pack", onSelect: () => setStickerCreatorOpen(true) },
+        { label: "Preferences…", shortcut: `${MOD}+Comma`, onSelect: onOpenSettings },
         { type: "separator" },
-        { label: "Sign out", onSelect: onSignOut },
+        { label: "Quit Signal", onSelect: quit },
       ],
     },
     {

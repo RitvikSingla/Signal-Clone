@@ -30,7 +30,6 @@ import { ApiError } from "@/lib/api";
 import { conversationApi } from "@/lib/endpoints";
 import type { ConversationSummary, Message, UserPrivate } from "@/lib/types";
 import { useChat } from "@/store/chat";
-import { useSession } from "@/store/session";
 import { nextZoom, useUi } from "@/store/ui";
 
 type ChatsView = "list" | "archive" | "new-chat";
@@ -73,6 +72,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
     forwardMessages,
     pinMessage,
     unpinMessage,
+    loadUntil,
   } = useChat();
 
   // One socket for the session. Presence, typing and live delivery all
@@ -80,7 +80,6 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   const { status: socketStatus, sendTyping } = useSocket(true);
 
   const push = useToasts((state) => state.push);
-  const signOut = useSession((state) => state.signOut);
 
   const tabsHidden = useUi((state) => state.tabsHidden);
   const toggleTabs = useUi((state) => state.toggleTabs);
@@ -96,6 +95,9 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   const [settingsSection, setSettingsSection] = useState<SectionId>("profile");
   const [infoOpen, setInfoOpen] = useState(false);
   const [contactsLoaded, setContactsLoaded] = useState(false);
+  // Chat-scoped search (the header's magnifier) and the hit to scroll to.
+  const [searchScopeId, setSearchScopeId] = useState<string | null>(null);
+  const [jumpRequest, setJumpRequest] = useState<{ messageId: string; nonce: number } | null>(null);
 
   useEffect(() => {
     void loadConversations().then(() => void loadGroupMembers());
@@ -193,17 +195,34 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   const handleSelect = useCallback(
     (id: string) => {
       setInfoOpen(false);
-      const summary =
-        conversations.find((c) => c.id === id) ?? archived.find((c) => c.id === id);
-      void openConversation(id, { markRead: summary ? !isRequest(summary) : true });
+      const summary = conversations.find((c) => c.id === id) ?? archived.find((c) => c.id === id);
+      setJumpRequest(null);
+      return openConversation(id, {
+        markRead: summary ? !isRequest(summary) : true,
+        currentUserId: user.id,
+      });
     },
-    [openConversation, conversations, archived, isRequest],
+    [openConversation, conversations, archived, isRequest, user.id],
   );
 
   const comingSoon = useCallback(
     (feature: string) => push(`${feature} are a placeholder in this build.`),
     [push],
   );
+
+  function searchInChat() {
+    if (!activeId) return;
+    setTab("chats");
+    setChatsView("list");
+    setSearch("");
+    setSearchScopeId(activeId);
+    requestAnimationFrame(() => document.getElementById("conversation-search")?.focus());
+  }
+
+  async function openMessage(conversationId: string, messageId: string) {
+    if (useChat.getState().activeId !== conversationId) await handleSelect(conversationId);
+    setJumpRequest({ messageId, nonce: Date.now() });
+  }
 
   function openSettings(section: SectionId = "profile") {
     setSettingsSection(section);
@@ -279,6 +298,11 @@ export function SignalApp({ user }: { user: UserPrivate }) {
         setChatsView("new-chat");
         return;
       }
+      if (meta && event.shiftKey && key === "f") {
+        event.preventDefault();
+        searchInChat();
+        return;
+      }
       if (meta && !event.shiftKey && key === "f") {
         event.preventDefault();
         setTab("chats");
@@ -337,14 +361,17 @@ export function SignalApp({ user }: { user: UserPrivate }) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [infoOpen, handleSelect, openDialog, setZoom]);
+    // searchInChat reads the latest activeId each render; listing it here
+    // would re-bind the listener on every keystroke-driven render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infoOpen, handleSelect, openDialog, setZoom, activeId]);
 
   const storiesUnseen = !viewedStories.includes(ONBOARDING_STORY_ID);
   const showRail = !tabsHidden;
 
   return (
     <div className="flex h-dvh w-full flex-col overflow-hidden bg-surface">
-      <MenuBar onOpenSettings={() => openSettings()} onSignOut={() => void signOut()} />
+      <MenuBar onOpenSettings={() => openSettings()} />
 
       <div className="flex min-h-0 w-full flex-1">
         {/* On a phone the rail gives up its width to the open thread, the way
@@ -402,6 +429,18 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                   onSelect={handleSelect}
                   onCompose={() => setChatsView("new-chat")}
                   onOpenContact={(userId) => void startChatWith(userId)}
+                  onOpenMessage={(conversationId, messageId) =>
+                    void openMessage(conversationId, messageId)
+                  }
+                  scope={
+                    searchScopeId
+                      ? (conversations.find((c) => c.id === searchScopeId) ?? null)
+                      : null
+                  }
+                  onClearScope={() => {
+                    setSearchScopeId(null);
+                    setSearch("");
+                  }}
                   onViewArchive={() => {
                     void loadArchived();
                     setChatsView("archive");
@@ -427,8 +466,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 // already in your address book reads as verified.
                 verified={
                   detail?.peer
-                    ? contactIds.has(detail.peer.id) &&
-                      !acceptedRequests[`${user.id}:${detail.id}`]
+                    ? contactIds.has(detail.peer.id) && !acceptedRequests[`${user.id}:${detail.id}`]
                     : true
                 }
                 commonGroups={commonGroups}
@@ -448,7 +486,9 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 }
                 onReact={handleReact}
                 onPin={(message, seconds) =>
-                  void pinMessage(message.id, seconds).catch(() => push("Could not pin the message."))
+                  void pinMessage(message.id, seconds).catch(() =>
+                    push("Could not pin the message."),
+                  )
                 }
                 onUnpin={(messageId) =>
                   void unpinMessage(messageId).catch(() => push("Could not unpin the message."))
@@ -460,7 +500,9 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 }
                 onDeleteForMe={(ids) =>
                   activeId &&
-                  void hideMessages(activeId, ids).catch(() => push("Could not delete the message."))
+                  void hideMessages(activeId, ids).catch(() =>
+                    push("Could not delete the message."),
+                  )
                 }
                 onForward={async (messageIds, conversationIds) => {
                   try {
@@ -495,6 +537,13 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                     .catch(() => push("Could not change disappearing messages."));
                 }}
                 onSafetyTips={() => openDialog("safety-tips")}
+                onSearchInChat={searchInChat}
+                jumpRequest={jumpRequest}
+                onLoadUntil={(messageId) =>
+                  activeId ? loadUntil(activeId, messageId) : Promise.resolve(false)
+                }
+                unreadFromId={thread?.unreadFromId ?? null}
+                unreadCount={thread?.unreadCount ?? 0}
                 onWhatsNew={() => openDialog("whats-new")}
               />
             </div>

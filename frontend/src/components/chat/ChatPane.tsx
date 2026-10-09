@@ -9,11 +9,12 @@
  * for files dragged onto the conversation.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useNow } from "@/hooks/useNow";
 
-import { Lightbox, isImage, isVideo } from "@/components/chat/Attachments";
+import { Lightbox, download, isImage, isVideo } from "@/components/chat/Attachments";
+import { CallLobby } from "@/components/chat/CallLobby";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
 import { ConversationHero } from "@/components/chat/ConversationHero";
@@ -24,12 +25,8 @@ import { MessageList } from "@/components/chat/MessageList";
 import { AcceptedNotice, MessageRequestBar } from "@/components/chat/MessageRequest";
 import { PinnedBar } from "@/components/chat/PinnedBar";
 import { CloseIcon, ForwardIcon, SignalMark, TrashIcon } from "@/components/ui/Icons";
-import type {
-  Attachment,
-  ConversationDetail,
-  ConversationSummary,
-  Message,
-} from "@/lib/types";
+import { requestMedia } from "@/lib/media";
+import type { Attachment, ConversationDetail, ConversationSummary, Message } from "@/lib/types";
 
 type ChatPaneProps = {
   conversation: ConversationDetail | null;
@@ -66,6 +63,14 @@ type ChatPaneProps = {
   onDisappearing: (seconds: number) => void;
   onSafetyTips: () => void;
   onWhatsNew: () => void;
+  /** Header search: scope the chat list's search to this conversation. */
+  onSearchInChat: () => void;
+  /** Set by a search hit: scroll to this message (paging back if needed). */
+  jumpRequest: { messageId: string; nonce: number } | null;
+  onLoadUntil: (messageId: string) => Promise<boolean>;
+  /** The first message that was unread on opening, and how many were. */
+  unreadFromId: string | null;
+  unreadCount: number;
 };
 
 type Dialog =
@@ -90,30 +95,35 @@ export function ChatPane(props: ChatPaneProps) {
 
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
-  const [search, setSearch] = useState<{ query: string; index: number } | null>(null);
   const [infoFor, setInfoFor] = useState<Message | null>(null);
   const [selection, setSelection] = useState<string[] | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [lightbox, setLightbox] = useState<{ message: Message; index: number } | null>(null);
   const [jumpId, setJumpId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [call, setCall] = useState<{ kind: "video" | "voice"; stream: MediaStream } | null>(null);
   const composer = useRef<ComposerHandle | null>(null);
   const now = useNow();
+  const { jumpRequest, onLoadUntil } = props;
 
-  // Newest match first, which is what "next" walks from in Signal.
-  const matches = useMemo(() => {
-    const needle = search?.query.trim().toLowerCase();
-    if (!needle) return [];
-    return messages
-      .filter((m) => !m.deleted_at && (m.body ?? "").toLowerCase().includes(needle))
-      .map((m) => m.id)
-      .reverse();
-  }, [messages, search?.query]);
+  // A search hit asks for a message: page back until it is loaded, then
+  // scroll to it and flash it.
+  useEffect(() => {
+    if (!jumpRequest) return;
+    let live = true;
+    void onLoadUntil(jumpRequest.messageId).then((found) => {
+      if (!live || !found) return;
+      setJumpId(jumpRequest.messageId);
+      setTimeout(() => live && setJumpId(null), 1600);
+    });
+    return () => {
+      live = false;
+    };
+  }, [jumpRequest, onLoadUntil]);
 
   if (!conversation) return <EmptyPane onWhatsNew={props.onWhatsNew} />;
 
-  const highlightId =
-    search && matches.length ? matches[search.index % matches.length] : jumpId;
+  const highlightId = jumpId;
   const byId = (id: string) => messages.find((m) => m.id === id);
 
   function jumpTo(messageId: string) {
@@ -121,6 +131,11 @@ export function ChatPane(props: ChatPaneProps) {
     setJumpId(messageId);
     // Re-set after a beat so jumping to the same message twice still scrolls.
     setTimeout(() => setJumpId((current) => (current === messageId ? null : current)), 1600);
+  }
+
+  async function startCall(kind: "video" | "voice") {
+    const stream = await requestMedia(kind === "video" ? "video-call" : "voice-call");
+    if (stream) setCall({ kind, stream });
   }
 
   const actions: BubbleActions = {
@@ -141,6 +156,9 @@ export function ChatPane(props: ChatPaneProps) {
     onInfo: setInfoFor,
     onDelete: (message) => setDialog({ kind: "delete", ids: [message.id] }),
     onOpenMedia: (message, index) => setLightbox({ message, index }),
+    onDownload: (message) => {
+      for (const attachment of message.attachments) void download(attachment, message.created_at);
+    },
   };
 
   const renderStatic = (message: Message) => (
@@ -207,11 +225,10 @@ export function ChatPane(props: ChatPaneProps) {
       <ChatHeader
         conversation={conversation}
         isRequest={isRequest}
-        search={search ? { ...search, total: matches.length } : null}
-        onSearchChange={setSearch}
+        onSearch={props.onSearchInChat}
         onBack={props.onBack}
         onOpenInfo={props.onOpenInfo}
-        onComingSoon={props.onComingSoon}
+        onCall={(kind) => void startCall(kind)}
         onTogglePin={props.onTogglePin}
         onArchive={props.onArchive}
         onDisappearing={props.onDisappearing}
@@ -238,6 +255,8 @@ export function ChatPane(props: ChatPaneProps) {
           loading={loading}
           typingPeople={typingPeople}
           highlightId={highlightId}
+          unreadFromId={props.unreadFromId}
+          unreadCount={props.unreadCount}
           selection={selection}
           onToggleSelected={(message) =>
             setSelection((current) =>
@@ -285,7 +304,9 @@ export function ChatPane(props: ChatPaneProps) {
             selectedMessages.length &&
             setDialog({
               kind: "forward",
-              ids: selectedMessages.filter((m) => !m.deleted_at && m.type !== "system").map((m) => m.id),
+              ids: selectedMessages
+                .filter((m) => !m.deleted_at && m.type !== "system")
+                .map((m) => m.id),
             })
           }
           onDelete={() => selection.length && setDialog({ kind: "delete", ids: selection })}
@@ -318,7 +339,9 @@ export function ChatPane(props: ChatPaneProps) {
 
       {dragging && (
         <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-ultramarine bg-surface/85">
-          <p className="text-[15px] font-semibold text-ink">Drop files to add them to your message</p>
+          <p className="text-[15px] font-semibold text-ink">
+            Drop files to add them to your message
+          </p>
         </div>
       )}
 
@@ -361,7 +384,22 @@ export function ChatPane(props: ChatPaneProps) {
           items={lightboxItems}
           start={Math.min(lightbox.index, lightboxItems.length - 1)}
           caption={lightbox.message.body}
+          sentAt={lightbox.message.created_at}
+          onForward={() => {
+            const id = lightbox.message.id;
+            setLightbox(null);
+            setDialog({ kind: "forward", ids: [id] });
+          }}
           onClose={() => setLightbox(null)}
+        />
+      )}
+
+      {call && (
+        <CallLobby
+          conversation={conversation}
+          kind={call.kind}
+          stream={call.stream}
+          onLeave={() => setCall(null)}
         />
       )}
     </section>
@@ -421,9 +459,7 @@ function EmptyPane({ onWhatsNew }: { onWhatsNew: () => void }) {
   return (
     <section className="relative hidden min-w-0 flex-1 flex-col items-center justify-center bg-surface px-6 text-center md:flex">
       <SignalMark size={84} className="text-ink" />
-      <h2 className="mt-5 text-[17px] font-semibold tracking-tight text-ink">
-        Welcome to Signal
-      </h2>
+      <h2 className="mt-5 text-[17px] font-semibold tracking-tight text-ink">Welcome to Signal</h2>
       <p className="mt-0.5 text-[13px] text-ink">
         See{" "}
         <button type="button" onClick={onWhatsNew} className="text-link hover:underline">

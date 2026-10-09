@@ -24,6 +24,7 @@ import {
 import { Avatar } from "@/components/ui/Avatar";
 import {
   ArchiveIcon,
+  CloseIcon,
   ComposeIcon,
   FolderIcon,
   MoonIcon,
@@ -33,12 +34,7 @@ import {
 import { Menu } from "@/components/ui/Menu";
 import { messageApi } from "@/lib/endpoints";
 import { listTimestamp } from "@/lib/format";
-import type {
-  Contact,
-  ConversationSummary,
-  MessageSearchHit,
-  UserPrivate,
-} from "@/lib/types";
+import type { Contact, ConversationSummary, MessageSearchHit, UserPrivate } from "@/lib/types";
 
 type ConversationListProps = {
   conversations: ConversationSummary[];
@@ -56,6 +52,11 @@ type ConversationListProps = {
   onSelect: (id: string) => void;
   onCompose: () => void;
   onOpenContact: (userId: string) => void;
+  /** Open a search hit: the thread, scrolled to that message. */
+  onOpenMessage: (conversationId: string, messageId: string) => void;
+  /** Set while searching inside one chat (the header's search button). */
+  scope: ConversationSummary | null;
+  onClearScope: () => void;
   onViewArchive: () => void;
   onOpenSettings: (section: "chats" | "notifications") => void;
 };
@@ -76,6 +77,9 @@ export function ConversationList({
   onSelect,
   onCompose,
   onOpenContact,
+  onOpenMessage,
+  scope,
+  onClearScope,
   onViewArchive,
   onOpenSettings,
 }: ConversationListProps) {
@@ -106,7 +110,7 @@ export function ConversationList({
     );
   }, [contacts, conversations, needle]);
 
-  const messageHits = useMessageSearch(needle);
+  const { hits: messageHits, searching } = useMessageSearch(needle, scope?.id ?? null);
 
   return (
     <SidePane>
@@ -151,25 +155,66 @@ export function ConversationList({
         </div>
       </PaneHeader>
 
-      <PaneSearch
-        id="conversation-search"
-        value={search}
-        onChange={onSearchChange}
-        filter={{
-          active: filter === "unread",
-          label: filter === "unread" ? "Show all chats" : "Filter by unread",
-          onToggle: () => onFilterChange(filter === "unread" ? "all" : "unread"),
-        }}
-      />
+      {scope ? (
+        <ScopedSearch
+          scope={scope}
+          value={search}
+          onChange={onSearchChange}
+          onClear={onClearScope}
+        />
+      ) : (
+        <PaneSearch
+          id="conversation-search"
+          value={search}
+          onChange={onSearchChange}
+          filter={{
+            active: filter === "unread",
+            label: filter === "unread" ? "Show all chats" : "Filter by unread",
+            onToggle: () => onFilterChange(filter === "unread" ? "all" : "unread"),
+          }}
+        />
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2">
         {loading && <ListSkeleton />}
 
-        {!loading && error && (
-          <p className="px-4 py-6 text-[13px] text-danger">{error}</p>
+        {!loading && error && <p className="px-4 py-6 text-[13px] text-danger">{error}</p>}
+
+        {!loading && !error && scope && needle && (
+          <>
+            {searching && messageHits.length === 0 ? (
+              <ResultSkeleton />
+            ) : messageHits.length > 0 ? (
+              <>
+                <SectionLabel>Messages</SectionLabel>
+                {messageHits.map((hit) => (
+                  <MessageHitRow
+                    key={hit.message_id}
+                    hit={hit}
+                    needle={needle}
+                    user={user}
+                    conversations={conversations}
+                    onOpen={onOpenMessage}
+                  />
+                ))}
+              </>
+            ) : (
+              <PaneEmpty
+                heading="No results"
+                detail={`No results for “${search.trim()}” in this chat`}
+              />
+            )}
+          </>
         )}
 
-        {!loading && !error && needle && (
+        {!loading && !error && scope && !needle && (
+          <PaneEmpty
+            heading="Search chat"
+            detail={`Find messages in your chat with ${scope.title}.`}
+          />
+        )}
+
+        {!loading && !error && !scope && needle && (
           <>
             {visible.length > 0 && <SectionLabel>Chats</SectionLabel>}
             {visible.map((conversation) => (
@@ -206,26 +251,16 @@ export function ConversationList({
 
             {messageHits.length > 0 && <SectionLabel>Messages</SectionLabel>}
             {messageHits.map((hit) => (
-              <button
+              <MessageHitRow
                 key={hit.message_id}
-                type="button"
-                onClick={() => onSelect(hit.conversation_id)}
-                className="mx-2 flex w-[calc(100%-1rem)] flex-col rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-surface-hover"
-              >
-                <span className="flex w-full items-baseline gap-2">
-                  <span className="truncate text-[13px] font-semibold text-ink">
-                    {hit.conversation_title}
-                  </span>
-                  <span className="ml-auto shrink-0 text-[11px] text-ink-2">
-                    {listTimestamp(hit.created_at)}
-                  </span>
-                </span>
-                <span className="truncate text-[12.5px] text-ink-2">
-                  {hit.sender_name ? `${hit.sender_name.split(" ")[0]}: ` : ""}
-                  <Highlight text={hit.body ?? ""} needle={needle} />
-                </span>
-              </button>
+                hit={hit}
+                needle={needle}
+                user={user}
+                conversations={conversations}
+                onOpen={onOpenMessage}
+              />
             ))}
+            {searching && messageHits.length === 0 && <ResultSkeleton rows={2} />}
 
             {visible.length === 0 && contactHits.length === 0 && messageHits.length === 0 && (
               <PaneEmpty heading="No results" detail={`No results for “${search.trim()}”`} />
@@ -233,17 +268,16 @@ export function ConversationList({
           </>
         )}
 
-        {!loading && !error && !needle && visible.length === 0 && (
+        {!loading && !error && !needle && !scope && visible.length === 0 && (
           <PaneEmpty
             heading={filter === "unread" ? "No unread chats" : "No chats"}
-            detail={
-              filter === "unread" ? "Everything is read." : "Recent chats will appear here."
-            }
+            detail={filter === "unread" ? "Everything is read." : "Recent chats will appear here."}
           />
         )}
 
         {!loading &&
           !needle &&
+          !scope &&
           visible.map((conversation) => (
             <ConversationRow
               key={conversation.id}
@@ -285,8 +319,8 @@ export function ArchiveList({
         ) : (
           <>
             <p className="px-5 pb-3 pt-1 text-[12px] leading-snug text-ink-2">
-              These chats are archived and will only appear in the Chats list if new
-              messages are received.
+              These chats are archived and will only appear in the Chats list if new messages are
+              received.
             </p>
             {archived.map((conversation) => (
               <ConversationRow
@@ -307,9 +341,7 @@ export function ArchiveList({
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="px-5 pb-1 pt-3 text-[13px] font-semibold text-ink">{children}</div>
-  );
+  return <div className="px-5 pb-1 pt-3 text-[13px] font-semibold text-ink">{children}</div>;
 }
 
 function Highlight({ text, needle }: { text: string; needle: string }) {
@@ -318,33 +350,170 @@ function Highlight({ text, needle }: { text: string; needle: string }) {
   return (
     <>
       {text.slice(0, index)}
-      <strong className="font-semibold text-ink">
-        {text.slice(index, index + needle.length)}
-      </strong>
+      <strong className="font-semibold text-ink">{text.slice(index, index + needle.length)}</strong>
       {text.slice(index + needle.length)}
     </>
   );
 }
 
-/** Full-text search over message bodies, debounced. */
-function useMessageSearch(needle: string): MessageSearchHit[] {
-  const [hits, setHits] = useState<MessageSearchHit[]>([]);
+/** Full-text search over message bodies, debounced; optionally one chat. */
+function useMessageSearch(
+  needle: string,
+  conversationId: string | null,
+): { hits: MessageSearchHit[]; searching: boolean } {
+  const [state, setState] = useState<{ key: string; hits: MessageSearchHit[] }>({
+    key: "",
+    hits: [],
+  });
+  const key = `${conversationId ?? "*"}:${needle}`;
+  const minLength = conversationId ? 1 : 2;
 
   useEffect(() => {
+    if (needle.length < minLength) return;
+    let live = true;
     const timer = setTimeout(() => {
-      if (needle.length < 2) {
-        setHits([]);
-        return;
-      }
       messageApi
-        .search(needle)
-        .then(setHits)
-        .catch(() => setHits([]));
+        .search(needle, conversationId)
+        .then((hits) => live && setState({ key, hits }))
+        .catch(() => live && setState({ key, hits: [] }));
     }, 250);
-    return () => clearTimeout(timer);
-  }, [needle]);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [needle, conversationId, key, minLength]);
 
-  return needle.length < 2 ? [] : hits;
+  if (needle.length < minLength) return { hits: [], searching: false };
+  return { hits: state.key === key ? state.hits : [], searching: state.key !== key };
+}
+
+/** "You to Aarav" / "Aarav to You", the way Signal titles a message hit. */
+function MessageHitRow({
+  hit,
+  needle,
+  user,
+  conversations,
+  onOpen,
+}: {
+  hit: MessageSearchHit;
+  needle: string;
+  user: UserPrivate;
+  conversations: ConversationSummary[];
+  onOpen: (conversationId: string, messageId: string) => void;
+}) {
+  const conversation = conversations.find((c) => c.id === hit.conversation_id);
+  const mine = hit.sender_id === user.id;
+  const senderName = mine ? user.display_name : (hit.sender_name ?? "Unknown");
+  const senderColor = mine
+    ? user.avatar_color
+    : (conversation?.peer?.avatar_color ?? conversation?.avatar_color ?? "A200");
+  const title =
+    conversation?.type === "group"
+      ? `${mine ? "You" : senderName} in ${hit.conversation_title}`
+      : mine
+        ? `You to ${hit.conversation_title}`
+        : `${senderName} to You`;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(hit.conversation_id, hit.message_id)}
+      className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-surface-hover"
+    >
+      <Avatar
+        name={senderName}
+        colorKey={senderColor}
+        url={mine ? user.avatar_url : null}
+        size={36}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="flex w-full items-baseline gap-2">
+          <span className="truncate text-[13px] font-semibold text-ink">{title}</span>
+          <span className="ml-auto shrink-0 text-[11px] text-ink-2">
+            {listTimestamp(hit.created_at)}
+          </span>
+        </span>
+        <span className="block truncate text-[12.5px] text-ink-2">
+          <Highlight text={hit.body ?? ""} needle={needle} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** The search field while scoped to one chat: a chip with the contact. */
+function ScopedSearch({
+  scope,
+  value,
+  onChange,
+  onClear,
+}: {
+  scope: ConversationSummary;
+  value: string;
+  onChange: (value: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="px-3 pb-2 pt-1">
+      <div className="flex h-[30px] items-center gap-1.5 rounded-md bg-surface-sunken pl-1.5 pr-1 focus-within:ring-2 focus-within:ring-ultramarine">
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-surface-chip py-0.5 pl-0.5 pr-1">
+          <Avatar
+            name={scope.title}
+            colorKey={scope.avatar_color}
+            url={scope.avatar_url}
+            size={18}
+          />
+          <button
+            type="button"
+            onClick={onClear}
+            aria-label={`Stop searching in ${scope.title}`}
+            className="flex size-4 items-center justify-center rounded-full text-ink-2 hover:text-ink"
+          >
+            <CloseIcon size={11} strokeWidth={2.4} />
+          </button>
+        </span>
+        <input
+          id="conversation-search"
+          type="search"
+          autoFocus
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") onClear();
+          }}
+          placeholder="Search chat"
+          className="h-full min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-2"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            aria-label="Clear search"
+            className="flex size-6 shrink-0 items-center justify-center rounded text-ink-2 hover:text-ink"
+          >
+            <CloseIcon size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Grey placeholder rows while results load, as in the recording. */
+function ResultSkeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <div className="animate-pulse px-2 pt-1" aria-label="Searching">
+      {Array.from({ length: rows }).map((_, index) => (
+        <div key={index} className="flex items-center gap-3 px-2.5 py-2">
+          <div className="size-9 shrink-0 rounded-full bg-surface-sunken" />
+          <div className="flex-1 space-y-1.5">
+            <div className="h-2.5 w-2/5 rounded bg-surface-sunken" />
+            <div className="h-2.5 w-4/5 rounded bg-surface-sunken" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ListSkeleton() {
