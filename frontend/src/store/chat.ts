@@ -22,6 +22,7 @@ import type {
   ConversationSummary,
   Message,
 } from "@/lib/types";
+import { useSession } from "@/store/session";
 
 type ThreadState = {
   messages: Message[];
@@ -579,6 +580,22 @@ export const useChat = create<ChatState>((set, get) => ({
           ? thread.messages.map((m, i) => (i === index ? message : m))
           : [...thread.messages, message];
 
+      // A new message from someone else raises the chat's unread badge,
+      // unless the chat is open in a tab being looked at (the app marks
+      // that read instead). Edits, reactions and group updates do not.
+      const me = useSession.getState().user?.id;
+      const counts =
+        index < 0 &&
+        message.type !== "system" &&
+        message.deleted_at === null &&
+        Boolean(message.sender) &&
+        message.sender?.id !== me &&
+        !(
+          state.activeId === message.conversation_id &&
+          typeof document !== "undefined" &&
+          document.visibilityState === "visible"
+        );
+
       const conversations = sortConversations(
         state.conversations.map((c) =>
           // A reaction or pin on an older message must not replace the
@@ -589,6 +606,7 @@ export const useChat = create<ChatState>((set, get) => ({
             message.created_at >= c.last_activity_at)
             ? {
                 ...c,
+                unread_count: counts ? c.unread_count + 1 : c.unread_count,
                 last_activity_at: message.created_at,
                 last_message: {
                   id: message.id,

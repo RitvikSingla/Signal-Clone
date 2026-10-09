@@ -148,6 +148,32 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   const typingPeople = activeId ? (typing[activeId] ?? []) : [];
   const activeIsRequest = detail ? isRequest(detail) : false;
 
+  // A message that lands in the open chat is read as it arrives, as in
+  // Signal, so its badge never appears and the sender's ticks fill in. One
+  // that arrived while the tab was hidden is read when you come back. A
+  // message request is never marked read until it is accepted.
+  const lastIncomingId = useMemo(() => {
+    const last = thread?.messages.at(-1);
+    return last && last.type !== "system" && last.sender && last.sender.id !== user.id
+      ? last.id
+      : null;
+  }, [thread?.messages, user.id]);
+  const readThrough = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeId || !lastIncomingId || activeIsRequest || thread?.loading) return;
+    const id = activeId;
+    const markIfSeen = () => {
+      if (document.visibilityState !== "visible" || readThrough.current === lastIncomingId) return;
+      readThrough.current = lastIncomingId;
+      void markConversationRead(id).catch(() => {
+        readThrough.current = null;
+      });
+    };
+    markIfSeen();
+    document.addEventListener("visibilitychange", markIfSeen);
+    return () => document.removeEventListener("visibilitychange", markIfSeen);
+  }, [activeId, lastIncomingId, activeIsRequest, thread?.loading, markConversationRead]);
+
   const commonGroupList = useMemo(() => {
     const peerId = detail?.peer?.id;
     if (!peerId) return [];
