@@ -6,10 +6,13 @@ whatever it needs. Nothing in the codebase reads os.environ directly; it all
 comes through the single Settings object exported at the bottom.
 """
 
+import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # backend/app/core/config.py -> parents[2] is backend/
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -48,7 +51,10 @@ class Settings(BaseSettings):
     expose_otp_in_response: bool = True
 
     # --- http -----------------------------------------------------------
-    cors_origins: list[str] = [
+    #: From the environment as a JSON array, or as one URL or several
+    #: separated by commas, which is what people type into a hosting
+    #: dashboard.
+    cors_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
@@ -57,6 +63,19 @@ class Settings(BaseSettings):
     media_root: Path = BASE_DIR / "media"
     media_url_prefix: str = "/media"
     max_upload_bytes: int = 10 * 1024 * 1024
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _parse_origins(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        text = value.strip()
+        if text.startswith("["):
+            items = json.loads(text)
+        else:
+            items = text.split(",")
+        # An origin never has a trailing slash; a browser would not match it.
+        return [str(item).strip().strip("'\"").rstrip("/") for item in items if str(item).strip()]
 
     @property
     def is_production(self) -> bool:
