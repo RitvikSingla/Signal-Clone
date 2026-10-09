@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     otp_ttl_seconds: int = 300
     otp_max_attempts: int = 5
     expose_otp_in_response: bool = True
+    #: One-tap sign-in buttons for the seeded accounts. On for a public demo,
+    #: so a reviewer never has to guess a phone number; turn off for real use.
+    show_demo_accounts: bool = True
 
     # --- http -----------------------------------------------------------
     #: From the environment as a JSON array, or as one URL or several

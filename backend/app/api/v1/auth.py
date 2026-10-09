@@ -151,9 +151,10 @@ async def me(user: CurrentUser) -> UserPrivate:
 async def demo_accounts(db: DbSession) -> list[DemoAccount]:
     """Seeded accounts, offered as one-tap sign-in on the welcome screen.
 
-    Development only. A reviewer should never have to guess a phone number.
+    A reviewer should never have to guess a phone number. Switched off with
+    SHOW_DEMO_ACCOUNTS=false.
     """
-    if settings.is_production:
+    if not settings.show_demo_accounts:
         return []
 
     from app.models import User  # local import keeps the router import light
