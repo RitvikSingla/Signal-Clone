@@ -1,8 +1,8 @@
 /**
- * Drive the running app in a real browser and capture the key screens.
- *
- * Used to check the UI against Signal side by side, and to produce the
- * images for the README. Needs both dev servers running.
+ * Drive the running app in a real browser and capture the key screens:
+ * desktop (dark and light), tablet and phone widths. Produces the images in
+ * docs/screenshots for the README. Needs both dev servers running and a
+ * seeded database.
  *
  *   node scripts/screenshots.mjs [outputDir]
  *
@@ -49,30 +49,46 @@ const page = await browser.newPage();
 const problems = [];
 page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
 page.on("console", (message) => {
-  if (message.type() === "error") problems.push(`console: ${message.text()}`);
+  if (message.type() === "error" && !message.text().includes("401")) {
+    problems.push(`console: ${message.text()}`);
+  }
 });
 
-/** Click the first button whose text contains `needle`. */
-async function clickByText(needle) {
-  const found = await page.evaluate((text) => {
-    const button = [...document.querySelectorAll("button")].find((element) =>
-      (element.textContent ?? "").includes(text),
-    );
-    if (!button) return false;
-    button.click();
-    return true;
-  }, needle);
+/** Click the first visible button or menu item whose text contains `needle`. */
+async function clickByText(needle, scope = "body") {
+  const found = await page.evaluate(
+    (text, s) => {
+      const root = document.querySelector(s) ?? document.body;
+      const node = [...root.querySelectorAll("button, [role=menuitem]")].find(
+        (n) => (n.textContent ?? "").includes(text) && n.getClientRects().length > 0,
+      );
+      node?.click();
+      return Boolean(node);
+    },
+    needle,
+    scope,
+  );
   if (!found) throw new Error(`No button containing "${needle}"`);
 }
 
 async function clickByLabel(label) {
   const found = await page.evaluate((value) => {
-    const button = document.querySelector(`button[aria-label="${value}"]`);
-    if (!button) return false;
-    button.click();
-    return true;
+    const node = [...document.querySelectorAll(`[aria-label="${value}"]`)].find(
+      (n) => n.getClientRects().length > 0,
+    );
+    node?.click();
+    return Boolean(node);
   }, label);
-  if (!found) throw new Error(`No button labelled "${label}"`);
+  if (!found) throw new Error(`No element labelled "${label}"`);
+}
+
+async function setTheme(value) {
+  await clickByLabel("Settings");
+  await wait(600);
+  await clickByText("Appearance");
+  await wait(400);
+  await page.select('select[aria-label="Theme"]', value);
+  await wait(500);
 }
 
 async function shot(name) {
@@ -84,47 +100,75 @@ console.log(`Capturing ${BASE} into ${outDir}`);
 
 await page.goto(BASE, { waitUntil: "networkidle2", timeout: 60_000 });
 await page.waitForSelector("#phone-field", { timeout: 20_000 });
+await wait(800);
 await shot("01-sign-in");
 
 await clickByText(DEMO_ACCOUNT);
 await page.waitForSelector("#code-field", { timeout: 20_000 });
-await shot("02-verification");
-
 await clickByText("Verify");
-await page.waitForFunction(() => document.body.innerText.includes("Chats"), {
+await page.waitForFunction(() => document.body.innerText.includes("Aarav Mehta"), {
   timeout: 30_000,
 });
 await wait(1200);
-await shot("03-conversation-list");
+await shot("02-welcome");
 
-await clickByText("Weekend Trek");
-await page.waitForFunction(() => document.body.innerText.includes("members"), {
-  timeout: 30_000,
-});
-await wait(1800);
-await shot("04-group-thread");
-
-await clickByText("Priya Nair");
-await wait(1800);
-await shot("05-direct-thread");
-
-await clickByLabel("Conversation details");
-await wait(1200);
-await shot("06-details-panel");
-
-await clickByLabel("Settings");
-await wait(700);
-await clickByText("dark");
-await wait(700);
-await shot("07-settings-dark");
-
-await clickByLabel("Chats");
+await clickByText("Weekend Trek", "aside");
+await page.waitForSelector("#composer-field", { timeout: 20_000 });
 await wait(1500);
-await shot("08-dark-thread");
+await shot("03-group-thread");
+
+await clickByLabel("About Aarav Mehta");
+await wait(500);
+await shot("04-member-card");
+await page.keyboard.press("Escape");
+await wait(300);
+
+await page.evaluate(() =>
+  [...document.querySelectorAll("header button")]
+    .find((b) => b.textContent?.includes("Weekend Trek"))
+    ?.click(),
+);
+await wait(1000);
+await shot("05-group-settings");
+await clickByLabel("Back");
+await wait(600);
+
+await clickByText("Aarav Mehta", "aside");
+await page.waitForSelector("#composer-field", { timeout: 20_000 });
+await wait(1500);
+await shot("06-direct-thread");
+
+await clickByLabel("Calls");
+await wait(1000);
+await shot("07-calls");
+await clickByLabel("Stories");
+await wait(1000);
+await shot("08-stories");
+
+await setTheme("light");
+await shot("09-settings-light");
+await clickByLabel("Chats");
+await wait(800);
+await clickByText("Weekend Trek", "aside");
+await wait(1500);
+await shot("10-light-theme");
+
+await setTheme("dark");
+await clickByLabel("Chats");
+await wait(800);
+
+await page.setViewport({ width: 820, height: 1180 });
+await wait(1000);
+await shot("11-tablet");
 
 await page.setViewport({ width: 390, height: 844 });
-await wait(900);
-await shot("09-mobile");
+await wait(800);
+await clickByLabel("Back to chats");
+await wait(800);
+await shot("12-mobile-list");
+await clickByText("Weekend Trek", "aside");
+await wait(1500);
+await shot("13-mobile-thread");
 
 console.log(
   problems.length

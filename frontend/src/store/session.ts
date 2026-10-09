@@ -11,7 +11,7 @@
 
 import { create } from "zustand";
 
-import { ApiError, setAccessToken } from "@/lib/api";
+import { ApiError, refreshAccessToken, setAccessToken, setSessionLostHandler } from "@/lib/api";
 import { authApi } from "@/lib/endpoints";
 import type { UserPrivate } from "@/lib/types";
 
@@ -36,27 +36,35 @@ type SessionState = {
   patchUser: (patch: Partial<UserPrivate>) => void;
 };
 
+/** Shared by overlapping calls, e.g. React running the boot effect twice. */
+let booting: Promise<void> | null = null;
+
 export const useSession = create<SessionState>((set, get) => ({
   status: "loading",
   user: null,
   error: null,
 
-  bootstrap: async () => {
-    try {
-      const { access_token } = await authApi.refresh();
-      setAccessToken(access_token);
-      const user = await authApi.me();
-      set({
-        user,
-        // An account that verified a code but never finished the profile
-        // step lands in onboarding rather than the app.
-        status: user.display_name ? "authenticated" : "onboarding",
-        error: null,
-      });
-    } catch {
-      setAccessToken(null);
-      set({ status: "anonymous", user: null });
-    }
+  bootstrap: () => {
+    booting ??= (async () => {
+      try {
+        const token = await refreshAccessToken();
+        if (!token) throw new Error("signed out");
+        const user = await authApi.me();
+        set({
+          user,
+          // An account that verified a code but never finished the profile
+          // step lands in onboarding rather than the app.
+          status: user.display_name ? "authenticated" : "onboarding",
+          error: null,
+        });
+      } catch {
+        setAccessToken(null);
+        set({ status: "anonymous", user: null });
+      } finally {
+        booting = null;
+      }
+    })();
+    return booting;
   },
 
   requestCode: async (phone) => {
@@ -103,3 +111,10 @@ export const useSession = create<SessionState>((set, get) => ({
     if (current) set({ user: { ...current, ...patch } });
   },
 }));
+
+// A refresh that fails mid-session (revoked elsewhere, expired) signs out
+// here instead of leaving the app showing errors on every call.
+setSessionLostHandler(() => {
+  setAccessToken(null);
+  useSession.setState({ status: "anonymous", user: null });
+});

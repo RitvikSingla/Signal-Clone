@@ -20,6 +20,7 @@
 import { useState } from "react";
 
 import { AttachmentContent, isSticker } from "@/components/chat/Attachments";
+import { Avatar } from "@/components/ui/Avatar";
 import { mediaUrl } from "@/lib/endpoints";
 import { ReactionPicker } from "@/components/chat/EmojiPicker";
 import {
@@ -52,6 +53,8 @@ export type BubbleActions = {
   onDelete: (message: Message) => void;
   onOpenMedia: (message: Message, index: number) => void;
   onDownload: (message: Message) => void;
+  /** A group sender's avatar or name was clicked. */
+  onOpenSender?: (userId: string) => void;
 };
 
 type MessageBubbleProps = {
@@ -75,6 +78,8 @@ type MessageBubbleProps = {
   senderLabel?: string | null;
   /** This chat's outgoing bubble colour ("visible to only you"). */
   outgoingColor?: string;
+  /** Your nickname for the sender, which replaces their profile name. */
+  senderName?: string | null;
   actions: BubbleActions;
 };
 
@@ -103,6 +108,7 @@ export function MessageBubble({
   readOnly = false,
   senderLabel = null,
   outgoingColor,
+  senderName = null,
   actions,
 }: MessageBubbleProps) {
   const [barOpen, setBarOpen] = useState(false);
@@ -200,6 +206,41 @@ export function MessageBubble({
         </span>
       )}
 
+      {isGroup && !mine && message.sender && (
+        // Signal puts the sender's avatar beside the last bubble of a run and
+        // keeps the column empty beside the others.
+        <div
+          className={`mr-1 w-7 shrink-0 self-end ${message.reactions.length > 0 ? "mb-3.5" : ""}`}
+        >
+          {endsRun &&
+            (readOnly ? (
+              <Avatar
+                name={message.sender.display_name}
+                colorKey={message.sender.avatar_color}
+                url={message.sender.avatar_url}
+                size={28}
+              />
+            ) : (
+              <button
+                type="button"
+                aria-label={`About ${senderName ?? message.sender.display_name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (!selecting && message.sender) actions.onOpenSender?.(message.sender.id);
+                }}
+                className="block rounded-full transition hover:brightness-110"
+              >
+                <Avatar
+                  name={message.sender.display_name}
+                  colorKey={message.sender.avatar_color}
+                  url={message.sender.avatar_url}
+                  size={28}
+                />
+              </button>
+            ))}
+        </div>
+      )}
+
       <div
         className={`flex max-w-[min(70%,560px)] flex-col ${mine ? "order-2 items-end" : "items-start"}`}
       >
@@ -238,7 +279,17 @@ export function MessageBubble({
               style={{ color: `var(--${message.sender.avatar_color.toLowerCase()})` }}
             >
               <span className="inline-flex items-center gap-1.5">
-                {message.sender.display_name}
+                <button
+                  type="button"
+                  disabled={readOnly || selecting}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (message.sender) actions.onOpenSender?.(message.sender.id);
+                  }}
+                  className="cursor-pointer font-semibold hover:underline disabled:cursor-default disabled:no-underline"
+                >
+                  {senderName ?? message.sender.display_name}
+                </button>
                 {senderLabel && (
                   <span className="rounded bg-[#1f6f3a] px-1.5 text-[10.5px] font-semibold leading-[16px] text-[#b7f5c6]">
                     {senderLabel}

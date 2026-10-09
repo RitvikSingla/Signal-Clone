@@ -135,16 +135,15 @@ await wait(2000);
 const senderStatus = await alice.page.evaluate((text) => {
   const store = window.__chatStoreProbe;
   void store;
-  // Fall back to reading the DOM: the read state renders the filled ticks
-  // in white, which carries the class the bubble applies at "read".
   const bubbles = [...document.querySelectorAll("p")].filter((p) =>
     (p.textContent ?? "").includes(text),
   );
   if (bubbles.length === 0) return "bubble not found";
   const bubble = bubbles[0].closest("div.rounded-bubble");
   if (!bubble) return "no bubble wrapper";
-  const svg = bubble.querySelector("svg path + path");
-  return svg ? "double-tick" : "single-tick";
+  // The status glyph names itself: Sent, Delivered or Read.
+  const label = bubble.querySelector("svg[aria-label]")?.getAttribute("aria-label");
+  return label === "Delivered" || label === "Read" ? "double-tick" : `single-tick (${label})`;
 }, marker);
 ok("sender shows the double check", senderStatus === "double-tick", senderStatus);
 await alice.page.screenshot({ path: `${outDir}/live-03-sender.png` });

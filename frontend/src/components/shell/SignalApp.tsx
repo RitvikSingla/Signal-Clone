@@ -276,6 +276,11 @@ export function SignalApp({ user }: { user: UserPrivate }) {
     handleSelect(id);
   }
 
+  const [pendingCall, setPendingCall] = useState<{
+    userId: string;
+    kind: "video" | "voice";
+  } | null>(null);
+
   async function startChatWith(userId: string) {
     try {
       const conversation = await conversationApi.createDirect(userId);
@@ -593,6 +598,12 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 onDeleteChat={deleteActiveChat}
                 onLeftGroup={afterLeaving}
                 onMessageUser={(userId) => void startChatWith(userId)}
+                onCallUser={(userId, kind) => {
+                  setPendingCall({ userId, kind });
+                  void startChatWith(userId);
+                }}
+                pendingCall={pendingCall}
+                onPendingCallHandled={() => setPendingCall(null)}
                 commonGroupList={commonGroupList}
                 onOpenChat={(id) => openChat(id)}
               />

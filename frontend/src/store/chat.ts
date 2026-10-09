@@ -107,6 +107,8 @@ type ChatState = {
   addContact: (userId: string) => Promise<void>;
   removeContact: (userId: string) => Promise<void>;
   unblockPeer: (userId: string) => Promise<void>;
+  /** Nickname and note, visible only to you; saving one keeps them in your contacts. */
+  setNickname: (userId: string, value: { given: string; family: string; note: string }) => Promise<void>;
 
   /** Applied when a message arrives from somewhere other than this tab. */
   upsertMessage: (message: Message) => void;
@@ -519,6 +521,23 @@ export const useChat = create<ChatState>((set, get) => ({
     const contact = get().contacts.find((c) => c.user.id === userId);
     if (!contact) return;
     const updated = await userApi.updateContact(contact.id, { is_blocked: false });
+    set((state) => ({
+      contacts: state.contacts.map((c) => (c.user.id === userId ? updated : c)),
+    }));
+  },
+
+  setNickname: async (userId, value) => {
+    let contact = get().contacts.find((c) => c.user.id === userId);
+    if (!contact) {
+      await get().acceptRequest(userId);
+      contact = get().contacts.find((c) => c.user.id === userId);
+      if (!contact) throw new Error("Could not save the nickname.");
+    }
+    const updated = await userApi.updateContact(contact.id, {
+      nickname: value.given,
+      nickname_family: value.family,
+      note: value.note,
+    });
     set((state) => ({
       contacts: state.contacts.map((c) => (c.user.id === userId ? updated : c)),
     }));

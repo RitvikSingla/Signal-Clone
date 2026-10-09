@@ -264,7 +264,10 @@ export const userApi = {
   addContact: (payload: { user_id?: string; handle?: string }) =>
     api.post<Contact>("/contacts", payload),
 
-  updateContact: (contactId: string, payload: Partial<{ nickname: string; is_blocked: boolean }>) =>
+  updateContact: (
+    contactId: string,
+    payload: Partial<{ nickname: string; nickname_family: string; note: string; is_blocked: boolean }>,
+  ) =>
     api.patch<Contact>(`/contacts/${contactId}`, payload),
 
   removeContact: (contactId: string) =>

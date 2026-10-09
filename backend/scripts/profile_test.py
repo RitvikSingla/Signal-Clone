@@ -72,6 +72,30 @@ def main() -> None:
         contact_id = r.json()["id"]
         r = c.post(f"{API}/contacts", json={"handle": "@lucas"}, headers=me)
         check("adding twice is refused", r.status_code == 409, r.status_code)
+        # --- nickname and note (visible only to the owner) -------------------
+        r = c.patch(
+            f"{API}/contacts/{contact_id}",
+            json={"nickname": " Luke ", "nickname_family": "S", "note": "Met on the trek"},
+            headers=me,
+        )
+        body = r.json()
+        check(
+            "set a nickname and note",
+            r.status_code == 200
+            and (body["nickname"], body["nickname_family"], body["note"]) == ("Luke", "S", "Met on the trek"),
+            r.text,
+        )
+        listed = next(x for x in c.get(f"{API}/contacts", headers=me).json() if x["id"] == contact_id)
+        check("the nickname persists", listed["nickname"] == "Luke" and listed["note"] == "Met on the trek", listed)
+        seen = c.get(f"{API}/users/search", params={"q": "lucas"}, headers=aarav).json()
+        check("others still see the profile name", any(u["display_name"] == "Lucas Silva" for u in seen), seen)
+        r = c.patch(
+            f"{API}/contacts/{contact_id}", json={"nickname": "", "nickname_family": "", "note": ""}, headers=me
+        )
+        check("clearing removes them", r.json()["nickname"] is None and r.json()["note"] is None, r.text)
+        r = c.patch(f"{API}/contacts/{contact_id}", json={"nickname": "x"}, headers=aarav)
+        check("someone else cannot edit your contact", r.status_code == 404, r.status_code)
+
         r = c.delete(f"{API}/contacts/{contact_id}", headers=me)
         after = {x["user"]["id"] for x in c.get(f"{API}/contacts", headers=me).json()}
         check("remove a contact", r.status_code == 200 and ids["lucas"] not in after, r.text)

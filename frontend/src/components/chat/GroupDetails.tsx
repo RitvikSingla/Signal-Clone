@@ -17,6 +17,7 @@ import { useMemo, useState, type ReactNode } from "react";
 
 import { muteItems, MuteUntilDialog } from "@/components/chat/MuteMenu";
 import { TimerSelect } from "@/components/chat/TimerSelect";
+import { ContactModal } from "@/components/chat/ContactModal";
 import { Avatar } from "@/components/ui/Avatar";
 import { PhotoPicker } from "@/components/ui/PhotoPicker";
 import {
@@ -69,6 +70,7 @@ type Props = {
   onCall: (kind: "video" | "voice") => void;
   onSearch: () => void;
   onMessage: (userId: string) => void;
+  onCallUser: (userId: string, kind: "video" | "voice") => void;
   onMute: (until: string | null) => void;
   onLeft: () => void;
 };
@@ -141,6 +143,7 @@ function MainPage({
   onCall,
   onSearch,
   onMessage,
+  onCallUser,
   onMute,
   onLeft,
   apply,
@@ -502,32 +505,13 @@ function MainPage({
       )}
 
       {dialog && typeof dialog === "object" && (
-        <MemberDialog
-          conversation={conversation}
-          member={dialog.member}
-          admin={admin}
+        <ContactModal
+          person={dialog.member.user}
+          group={conversation}
+          currentUserId={currentUserId}
           onClose={() => setDialog(null)}
-          onMessage={() => onMessage(dialog.member.user.id)}
-          onRole={async (role) => {
-            if (
-              await apply(
-                () => conversationApi.changeRole(conversation.id, dialog.member.user.id, role),
-                "Could not change the role.",
-              )
-            ) {
-              setDialog(null);
-            }
-          }}
-          onRemove={async () => {
-            if (
-              await apply(
-                () => conversationApi.removeMember(conversation.id, dialog.member.user.id),
-                "Could not remove them.",
-              )
-            ) {
-              setDialog(null);
-            }
-          }}
+          onMessage={onMessage}
+          onCall={onCallUser}
         />
       )}
 
@@ -723,80 +707,6 @@ function AddMembersDialog({
         >
           Update
         </DialogButton>
-      </div>
-    </Modal>
-  );
-}
-
-function MemberDialog({
-  conversation,
-  member,
-  admin,
-  onClose,
-  onMessage,
-  onRole,
-  onRemove,
-}: {
-  conversation: ConversationDetail;
-  member: Member;
-  admin: boolean;
-  onClose: () => void;
-  onMessage: () => void;
-  onRole: (role: "admin" | "member") => Promise<void>;
-  onRemove: () => Promise<void>;
-}) {
-  const [confirm, setConfirm] = useState(false);
-  if (confirm) {
-    return (
-      <ConfirmDialog
-        title={`Remove ${member.user.display_name}?`}
-        confirmLabel="Remove"
-        tone="danger"
-        onClose={() => setConfirm(false)}
-        onConfirm={() => void onRemove()}
-      >
-        Remove {member.user.display_name} from “{conversation.title}”?
-      </ConfirmDialog>
-    );
-  }
-  const ended = Boolean(conversation.ended_at);
-  return (
-    <Modal onClose={onClose} label={member.user.display_name} width={300} closeButton>
-      <div className="flex flex-col items-center text-center">
-        <Avatar
-          name={member.user.display_name}
-          colorKey={member.user.avatar_color}
-          url={member.user.avatar_url}
-          size={64}
-        />
-        <p className="mt-3 text-[15px] font-semibold text-ink">{member.user.display_name}</p>
-        {member.label && <LabelChip label={member.label} />}
-        {member.user.about && <p className="mt-1 text-[12.5px] text-ink-2">{member.user.about}</p>}
-        {member.role === "admin" && <p className="mt-1 text-[12px] text-ink-2">Admin</p>}
-      </div>
-      <div className="mt-4 flex flex-col gap-2">
-        <DialogButton
-          variant="secondary"
-          onClick={() => {
-            onClose();
-            onMessage();
-          }}
-        >
-          Message
-        </DialogButton>
-        {admin && !ended && (
-          <>
-            <DialogButton
-              variant="secondary"
-              onClick={() => void onRole(member.role === "admin" ? "member" : "admin")}
-            >
-              {member.role === "admin" ? "Remove as admin" : "Make admin"}
-            </DialogButton>
-            <DialogButton variant="danger" onClick={() => setConfirm(true)}>
-              Remove from group
-            </DialogButton>
-          </>
-        )}
       </div>
     </Modal>
   );

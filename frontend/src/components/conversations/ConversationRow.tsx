@@ -12,6 +12,7 @@
  */
 
 import { Avatar } from "@/components/ui/Avatar";
+import { useNickname } from "@/lib/nicknames";
 import { MuteIcon, PinIcon, StatusIcon } from "@/components/ui/Icons";
 import { useNow } from "@/hooks/useNow";
 import { useUi } from "@/store/ui";
@@ -37,6 +38,7 @@ export function ConversationRow({
 }: ConversationRowProps) {
   // Re-render on the shared clock so "Now" becomes "1m" without a refresh.
   useNow();
+  const nickname = useNickname(conversation.type === "direct" ? conversation.peer?.id : null);
 
   const last = conversation.last_message;
   const mine = last?.sender_id === currentUserId;
@@ -80,7 +82,7 @@ export function ConversationRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-1.5">
           <span className="truncate text-[13.5px] font-semibold text-ink">
-            {conversation.title}
+            {nickname ?? conversation.title}
           </span>
           {conversation.is_pinned && <PinIcon className="shrink-0 text-ink-2" />}
           {conversation.is_muted && <MuteIcon className="shrink-0 text-ink-2" />}

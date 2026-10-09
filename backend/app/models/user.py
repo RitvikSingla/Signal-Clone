@@ -111,7 +111,12 @@ class Contact(UUIDPrimaryKeyMixin, Base):
     contact_user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    #: Nickname first name; with nickname_family it replaces their profile
+    #: name for the owner only.
     nickname: Mapped[str | None] = mapped_column(String(64))
+    nickname_family: Mapped[str | None] = mapped_column(String(64))
+    #: A private note, visible only to the owner.
+    note: Mapped[str | None] = mapped_column(String(240))
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         UtcDateTime, default=utcnow, nullable=False

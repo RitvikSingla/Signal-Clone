@@ -19,6 +19,7 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
 import { ConversationHero } from "@/components/chat/ConversationHero";
 import { ContactDetails } from "@/components/chat/ContactDetails";
+import { ContactModal } from "@/components/chat/ContactModal";
 import { GroupDetails } from "@/components/chat/GroupDetails";
 import { MuteUntilDialog } from "@/components/chat/MuteMenu";
 import { CustomTimerDialog } from "@/components/chat/TimerSelect";
@@ -39,6 +40,7 @@ import type {
   ConversationSummary,
   Message,
 } from "@/lib/types";
+import { nicknameMap } from "@/lib/nicknames";
 import { useChat } from "@/store/chat";
 import { useUi } from "@/store/ui";
 
@@ -85,6 +87,11 @@ type ChatPaneProps = {
   onDeleteChat: () => Promise<void>;
   onLeftGroup: () => void;
   onMessageUser: (userId: string) => void;
+  /** Open a direct chat with this person and start a call there. */
+  onCallUser: (userId: string, kind: "video" | "voice") => void;
+  /** A call asked for from a contact modal, to start once this chat is open. */
+  pendingCall: { userId: string; kind: "video" | "voice" } | null;
+  onPendingCallHandled: () => void;
   /** Groups shared with the person in a direct chat. */
   commonGroupList: ConversationSummary[];
   onOpenChat: (conversationId: string) => void;
@@ -126,6 +133,7 @@ export function ChatPane(props: ChatPaneProps) {
   const [dragging, setDragging] = useState(false);
   const [call, setCall] = useState<{ kind: "video" | "voice"; stream: MediaStream } | null>(null);
   const [view, setView] = useState<"thread" | "details">("thread");
+  const [memberCard, setMemberCard] = useState<string | null>(null);
   const [menuDialog, setMenuDialog] = useState<
     null | "custom-timer" | "mute-until" | "all-media" | "delete-chat" | "leave" | "block"
   >(null);
@@ -133,6 +141,8 @@ export function ChatPane(props: ChatPaneProps) {
     conversation ? state.chatColors[conversation.id] : undefined,
   );
   const removeMessages = useChat((state) => state.removeMessages);
+  const contacts = props.contacts;
+  const nicknames = useMemo(() => nicknameMap(contacts), [contacts]);
   const blockedPeer = useChat((state) => {
     const peerId = conversation?.peer?.id;
     return peerId && state.contacts.some((c) => c.user.id === peerId && c.is_blocked)
@@ -186,6 +196,17 @@ export function ChatPane(props: ChatPaneProps) {
     return map;
   }, [conversation?.members]);
 
+  // A call asked for from someone's contact modal starts once their chat
+  // is the one open.
+  const { pendingCall, onPendingCallHandled } = props;
+  const peerId = conversation?.type === "direct" ? conversation.peer?.id : undefined;
+  useEffect(() => {
+    if (!pendingCall || !peerId || pendingCall.userId !== peerId) return;
+    onPendingCallHandled();
+    void startCall(pendingCall.kind);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCall, peerId]);
+
   if (!conversation) return <EmptyPane onWhatsNew={props.onWhatsNew} />;
 
   const isGroup = conversation.type === "group";
@@ -222,6 +243,7 @@ export function ChatPane(props: ChatPaneProps) {
           props.onSearchInChat();
         }}
         onMessage={props.onMessageUser}
+        onCallUser={props.onCallUser}
         onMute={props.onMute}
         onLeft={() => {
           setView("thread");
@@ -267,6 +289,7 @@ export function ChatPane(props: ChatPaneProps) {
     onDownload: (message) => {
       for (const attachment of message.attachments) void download(attachment, message.created_at);
     },
+    onOpenSender: setMemberCard,
   };
 
   const renderStatic = (message: Message) => (
@@ -373,6 +396,7 @@ export function ChatPane(props: ChatPaneProps) {
           typingPeople={typingPeople}
           highlightId={highlightId}
           labels={labels}
+          nicknames={nicknames}
           outgoingColor={chatColor}
           unreadFromId={props.unreadFromId}
           unreadCount={props.unreadCount}
@@ -581,6 +605,23 @@ export function ChatPane(props: ChatPaneProps) {
           Blocked people won&rsquo;t be able to call you or send you messages.
         </ConfirmDialog>
       )}
+
+      {memberCard &&
+        (() => {
+          const person =
+            conversation.members.find((m) => m.user.id === memberCard)?.user ??
+            messages.find((m) => m.sender?.id === memberCard)?.sender;
+          return person ? (
+            <ContactModal
+              person={person}
+              group={isGroup ? conversation : null}
+              currentUserId={currentUserId}
+              onClose={() => setMemberCard(null)}
+              onMessage={props.onMessageUser}
+              onCall={props.onCallUser}
+            />
+          ) : null;
+        })()}
 
       {call && (
         <CallLobby

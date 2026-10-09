@@ -45,6 +45,8 @@ type MessageListProps = {
   highlightId: string | null;
   /** Group member labels by user id, shown beside sender names. */
   labels?: Record<string, string>;
+  /** Your nicknames for people, by user id. */
+  nicknames?: Record<string, string>;
   /** This chat's outgoing bubble colour, when one is set. */
   outgoingColor?: string;
   unreadFromId: string | null;
@@ -72,6 +74,7 @@ export function MessageList({
   event,
   highlightId,
   labels,
+  nicknames,
   outgoingColor,
   unreadFromId,
   unreadCount,
@@ -268,6 +271,7 @@ export function MessageList({
                   selected={selection?.includes(message.id) ?? false}
                   onToggleSelected={onToggleSelected}
                   senderLabel={labels?.[message.sender?.id ?? ""] ?? null}
+                  senderName={nicknames?.[message.sender?.id ?? ""] ?? null}
                   outgoingColor={outgoingColor}
                   actions={actions}
                 />

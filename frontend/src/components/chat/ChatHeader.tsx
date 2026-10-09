@@ -14,6 +14,7 @@ import { useState } from "react";
 
 import { muteItems } from "@/components/chat/MuteMenu";
 import { Avatar } from "@/components/ui/Avatar";
+import { useNickname } from "@/lib/nicknames";
 import {
   ArchiveIcon,
   BackIcon,
@@ -78,6 +79,7 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isGroup = conversation.type === "group";
+  const nickname = useNickname(isGroup ? null : conversation.peer?.id);
   const active = conversation.can_send !== false || !conversation.ended_at;
 
   const menuItems: MenuItem[] = isRequest
@@ -153,7 +155,7 @@ export function ChatHeader({
             group={conversation.type === "group"}
           />
           <span className="truncate text-[13.5px] font-semibold text-ink">
-            {conversation.title}
+            {nickname ?? conversation.title}
           </span>
           {conversation.disappearing_seconds > 0 && (
             <span className="flex shrink-0 items-center gap-0.5 text-[11px] text-ink-2">

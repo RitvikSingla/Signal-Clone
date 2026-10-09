@@ -391,7 +391,7 @@ function MainPage({
   );
 }
 
-function SafetyNumberDialog({
+export function SafetyNumberDialog({
   peerId,
   name,
   onClose,
@@ -464,7 +464,7 @@ function PersonPlusIcon() {
   );
 }
 
-function BlockIcon() {
+export function BlockIcon() {
   return (
     <svg
       width="16"

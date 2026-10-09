@@ -31,6 +31,8 @@ class ContactOut(BaseModel):
     id: str
     user: UserPublic
     nickname: str | None
+    nickname_family: str | None = None
+    note: str | None = None
     is_blocked: bool
 
 
@@ -43,6 +45,8 @@ class AddContactIn(BaseModel):
 
 class UpdateContactIn(BaseModel):
     nickname: str | None = Field(default=None, max_length=64)
+    nickname_family: str | None = Field(default=None, max_length=64)
+    note: str | None = Field(default=None, max_length=240)
     is_blocked: bool | None = None
 
 
@@ -141,6 +145,8 @@ async def list_contacts(user: RegisteredUser, db: DbSession) -> list[ContactOut]
                 id=contact.id,
                 user=UserPublic.model_validate(peer),
                 nickname=contact.nickname,
+                nickname_family=contact.nickname_family,
+                note=contact.note,
                 is_blocked=contact.is_blocked,
             )
         )
@@ -201,6 +207,10 @@ async def update_contact(
 
     if payload.nickname is not None:
         contact.nickname = payload.nickname.strip() or None
+    if payload.nickname_family is not None:
+        contact.nickname_family = payload.nickname_family.strip() or None
+    if payload.note is not None:
+        contact.note = payload.note.strip() or None
     if payload.is_blocked is not None:
         contact.is_blocked = payload.is_blocked
     await db.commit()
@@ -210,6 +220,8 @@ async def update_contact(
         id=contact.id,
         user=UserPublic.model_validate(peer),
         nickname=contact.nickname,
+        nickname_family=contact.nickname_family,
+        note=contact.note,
         is_blocked=contact.is_blocked,
     )
 

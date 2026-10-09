@@ -67,6 +67,11 @@ async def websocket_endpoint(
     async with AsyncSessionLocal() as db:
         user = await _authenticate(token, db)
         if user is None:
+            # Accept before closing: a close during the handshake reaches the
+            # browser as a bare 403 (close code 1006), and the client could
+            # not tell an expired token, which it can renew, from a dropped
+            # connection.
+            await websocket.accept()
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
 

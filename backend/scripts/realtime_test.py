@@ -87,13 +87,18 @@ async def main() -> None:
     conversation_id = dm["id"]
 
     print("\n--- handshake ---")
+    # The server accepts and then closes with 1008, so a browser can tell a
+    # refused token (renew it) from a dropped connection (just retry).
     bad = None
     try:
-        async with websockets.connect(f"{WS}?token=not-a-real-token"):
+        async with websockets.connect(f"{WS}?token=not-a-real-token") as ws:
+            await asyncio.wait_for(ws.recv(), timeout=5)
             bad = "accepted"
-    except Exception:
-        bad = "rejected"
-    ok("a bad token is refused", bad == "rejected", bad)
+    except websockets.ConnectionClosed as exc:
+        bad = exc.rcvd.code if exc.rcvd else "closed"
+    except Exception as exc:  # noqa: BLE001
+        bad = repr(exc)
+    ok("a bad token is refused with 1008", bad == 1008, bad)
 
     async with websockets.connect(f"{WS}?token={ritvik}") as sock_r:
         hello = json.loads(await sock_r.recv())

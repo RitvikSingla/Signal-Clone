@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import sqlite3
 import sys
+import uuid
 from pathlib import Path
 
 import httpx
@@ -23,6 +24,8 @@ from PIL import Image
 BASE = "http://localhost:8000"
 API = f"{BASE}/api/v1"
 failures: list[str] = []
+#: Keeps client ids unique per run, so a rerun is not answered idempotently.
+RUN = uuid.uuid4().hex[:8]
 
 
 def check(label: str, ok: bool, detail: object = "") -> None:
@@ -48,7 +51,9 @@ def main() -> None:
         direct = next(c for c in convs if c["title"] == "Aarav Mehta")
         priya = next(c for c in convs if c["title"] == "Priya Nair")
         page = client.get(f"{API}/conversations/{direct['id']}/messages", headers=me).json()
-        texts = [m for m in page["messages"] if m["type"] == "text"]
+        # Live text messages only: other suites soft-delete some in this
+        # thread, and a deleted message cannot be pinned.
+        texts = [m for m in page["messages"] if m["type"] == "text" and not m["deleted_at"]]
         target = texts[-1]
 
         # --- pin ---------------------------------------------------------
@@ -124,14 +129,14 @@ def main() -> None:
         # --- send with attachment, then forward -------------------------
         r = client.post(
             f"{API}/conversations/{direct['id']}/messages",
-            json={"client_id": "actions-test-photo", "body": "Look", "attachment_ids": [image["id"]]},
+            json={"client_id": f"actions-test-photo-{RUN}", "body": "Look", "attachment_ids": [image["id"]]},
             headers=me,
         )
         sent = r.json()
         check("message with an image is type image", sent.get("type") == "image", r.text)
         r = client.post(
             f"{API}/conversations/{direct['id']}/messages",
-            json={"client_id": "actions-test-reuse", "attachment_ids": [image["id"]]},
+            json={"client_id": f"actions-test-reuse-{RUN}", "attachment_ids": [image["id"]]},
             headers=me,
         )
         check("an attachment cannot be attached twice", r.status_code == 404, r.status_code)
@@ -205,7 +210,7 @@ def main() -> None:
         ).json()
         sent = client.post(
             f"{API}/conversations/{direct['id']}/messages",
-            json={"client_id": "actions-test-bare", "attachment_ids": [bare["id"]]},
+            json={"client_id": f"actions-test-bare-{RUN}", "attachment_ids": [bare["id"]]},
             headers=me,
         ).json()
         client.post(

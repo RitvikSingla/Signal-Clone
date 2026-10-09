@@ -41,11 +41,49 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+/** Told when the session cannot be renewed, so the app can sign out. */
+let onSessionLost: (() => void) | null = null;
+
+export function setSessionLostHandler(handler: (() => void) | null): void {
+  onSessionLost = handler;
+}
+
+let refreshing: Promise<string | null> | null = null;
+
+/**
+ * Trade the refresh cookie for a new access token. Single-flight: the
+ * server rotates the cookie on every use, so two refreshes racing with the
+ * same cookie would leave one of them rejected. Every caller waiting at the
+ * same moment shares one request instead. Resolves to null when the session
+ * is gone.
+ */
+export function refreshAccessToken(): Promise<string | null> {
+  refreshing ??= request<{ access_token: string }>("POST", "/auth/refresh", undefined, {
+    noRetry: true,
+  })
+    .then((res) => {
+      accessToken = res.access_token;
+      return res.access_token;
+    })
+    .catch((error: unknown) => {
+      // A transport failure says nothing about the session; keep it.
+      if (error instanceof ApiError && error.isNetworkFailure) throw error;
+      accessToken = null;
+      return null;
+    })
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
+}
+
 type RequestOptions = {
   /** Skip the /api/v1 prefix, for routes like /health that sit at the root. */
   absolutePath?: boolean;
   signal?: AbortSignal;
   headers?: Record<string, string>;
+  /** Internal: do not renew the access token and retry on a 401. */
+  noRetry?: boolean;
 };
 
 async function request<T>(
@@ -80,6 +118,14 @@ async function request<T>(
 
   const text = await response.text();
   const payload = text ? safeJson(text) : null;
+
+  // The access token lasts thirty minutes; renew it once and retry rather
+  // than failing every call in a tab that has been open longer than that.
+  if (response.status === 401 && !options.noRetry && !path.startsWith("/auth/")) {
+    const renewed = await refreshAccessToken().catch(() => null);
+    if (renewed) return request<T>(method, path, body, { ...options, noRetry: true });
+    if (accessToken === null) onSessionLost?.();
+  }
 
   if (!response.ok) {
     throw new ApiError(response.status, extractMessage(payload, response.statusText), payload);

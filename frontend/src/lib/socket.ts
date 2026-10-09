@@ -15,6 +15,7 @@
  *     the socket by buffering
  */
 
+import { getAccessToken, refreshAccessToken } from "./api";
 import { config } from "./config";
 
 export type ServerFrame =
@@ -43,6 +44,8 @@ export type ServerFrame =
 export type SocketStatus = "connecting" | "open" | "closed";
 
 const HEARTBEAT_MS = 25_000;
+/** The close code the server uses when it refuses the access token. */
+const POLICY_VIOLATION = 1008;
 const MAX_BACKOFF_MS = 30_000;
 
 type Handlers = {
@@ -61,7 +64,7 @@ export class SignalSocket {
   private hasConnectedBefore = false;
 
   constructor(
-    private readonly token: string,
+    private token: string,
     private readonly handlers: Handlers,
   ) {}
 
@@ -69,6 +72,8 @@ export class SignalSocket {
     this.closedByUs = false;
     this.handlers.onStatus("connecting");
 
+    // REST calls renew the access token as it expires; use the newest one.
+    this.token = getAccessToken() ?? this.token;
     const url = `${config.wsUrl}?token=${encodeURIComponent(this.token)}`;
     const socket = new WebSocket(url);
     this.socket = socket;
@@ -90,10 +95,21 @@ export class SignalSocket {
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       this.stopHeartbeat();
       this.handlers.onStatus("closed");
-      if (!this.closedByUs) this.scheduleReconnect();
+      if (this.closedByUs) return;
+      if (event.code === POLICY_VIOLATION) {
+        // The server refused the token, most likely because it expired.
+        // Renew it first; if the session is gone, the app signs out.
+        void refreshAccessToken()
+          .then((token) => {
+            if (token && !this.closedByUs) this.scheduleReconnect();
+          })
+          .catch(() => this.scheduleReconnect());
+        return;
+      }
+      this.scheduleReconnect();
     };
 
     socket.onerror = () => {

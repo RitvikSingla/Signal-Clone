@@ -190,6 +190,8 @@ export type Contact = {
   id: string;
   user: UserPublic;
   nickname: string | null;
+  nickname_family?: string | null;
+  note?: string | null;
   is_blocked: boolean;
 };
 
