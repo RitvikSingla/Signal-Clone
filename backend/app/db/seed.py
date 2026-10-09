@@ -6,8 +6,8 @@ Run with:
     python -m app.db.seed --force    # wipes and reseeds
 
 The brief asks for seeded data so the app is usable the moment it opens. This
-script produces eight accounts, a contact graph, five direct threads and three
-groups, with scripted conversations backdated across ten days, mixed read
+script produces eight accounts, a contact graph, six direct threads (one of
+them a message request) and three groups, with scripted conversations backdated across ten days, mixed read
 state, reactions, quoted replies, one group where the demo account is a plain
 member rather than an admin, and one thread with a disappearing timer running.
 
@@ -248,6 +248,17 @@ DIRECT_THREADS: tuple[dict, ...] = (
             ("sofia", "That is the plan for the next pass."),
             ("kenji", "Send me the trace."),
             ("sofia", "Tomorrow morning."),
+        ),
+    },
+    {
+        # A message request: Lucas is not in Ritvik's address book and Ritvik
+        # has never replied, so the client renders the Accept / Block flow.
+        "pair": ("lucas", "ritvik"),
+        "minutes_ago_end": 11,
+        "unread_for": ("ritvik",),
+        "unread_count": 1,
+        "lines": (
+            ("lucas", "Hii bro"),
         ),
     },
 )

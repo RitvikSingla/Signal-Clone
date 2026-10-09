@@ -15,9 +15,10 @@
   color-scheme: light;
 
   /* Brand */
-  --ultramarine: #3a76f0;
-  --ultramarine-hover: #2f68dd;
+  --ultramarine: #2c6bed;
+  --ultramarine-hover: #2361dd;
   --ultramarine-soft: #e8effd;
+  --link: #2c6bed;
 
   /* Surfaces */
   --surface: #ffffff;
@@ -26,6 +27,9 @@
   --surface-rail: #f0f0f0;
   --surface-overlay: #ffffff;
   --surface-hover: #0000000a;
+  --surface-selected: #e3e3e3;
+  --surface-modal: #ffffff;
+  --surface-chip: #e9e9e9;
 
   /* Lines */
   --border: #e0e0e0;
@@ -40,11 +44,12 @@
   /* Message bubbles */
   --bubble-in: #e9e9e9;
   --bubble-in-ink: #1b1b1b;
-  --bubble-out: #3a76f0;
+  --bubble-out: #2c6bed;
   --bubble-out-ink: #ffffff;
 
   /* State */
   --danger: #d2303c;
+  --danger-soft: #fbe3e5;
   --success: #3b8f4e;
   --warning: #c97a16;
 
@@ -63,37 +68,43 @@
   --a210: #3a76f0;
 }
 
-/* Signal Desktop's dark theme is close to uniform: the rail, the list and
-   the thread share one near-black, separated by hairlines rather than by a
-   change in tone. Inputs and the selected row lift rather than sink. */
+/* Signal Desktop's dark theme, read off the reference recording: the rail
+   and the list share one near-black, the thread sits a shade darker, and
+   inputs, chips and the selected row lift to a mid grey. Incoming bubbles
+   are #3b3b3b; outgoing are the brand ultramarine. */
 [data-theme="dark"] {
   color-scheme: dark;
 
-  --ultramarine: #4b81f2;
-  --ultramarine-hover: #5e8ff4;
+  --ultramarine: #2c6bed;
+  --ultramarine-hover: #3c78f0;
   --ultramarine-soft: #1c2740;
+  --link: #8cacf5;
 
-  --surface: #1b1b1b;
+  --surface: #121212;
   --surface-raised: #1b1b1b;
-  --surface-sunken: #2c2c2c;
+  --surface-sunken: #2e2e2e;
   --surface-rail: #1b1b1b;
-  --surface-overlay: #2c2c2c;
-  --surface-hover: #ffffff0f;
+  --surface-overlay: #2e2e2e;
+  --surface-hover: #ffffff12;
+  --surface-selected: #2e2e2e;
+  --surface-modal: #2e2e2e;
+  --surface-chip: #3b3b3b;
 
-  --border: #303030;
-  --border-strong: #4f4f4f;
+  --border: #2e2e2e;
+  --border-strong: #4a4a4a;
 
-  --ink: #f0f0f0;
+  --ink: #e9e9e9;
   --ink-2: #b9b9b9;
-  --ink-3: #8f8f8f;
-  --ink-inverse: #1b1b1b;
+  --ink-3: #8b8b8b;
+  --ink-inverse: #121212;
 
-  --bubble-in: #2e2e2e;
-  --bubble-in-ink: #f0f0f0;
-  --bubble-out: #3a76f0;
+  --bubble-in: #3b3b3b;
+  --bubble-in-ink: #e9e9e9;
+  --bubble-out: #2c6bed;
   --bubble-out-ink: #ffffff;
 
-  --danger: #e8606b;
+  --danger: #f27b7b;
+  --danger-soft: #4a2426;
   --success: #5cb270;
   --warning: #e0a04a;
 }
@@ -102,31 +113,36 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --ultramarine: #4b81f2;
-    --ultramarine-hover: #5e8ff4;
+    --ultramarine: #2c6bed;
+    --ultramarine-hover: #3c78f0;
     --ultramarine-soft: #1c2740;
+    --link: #8cacf5;
 
-    --surface: #1b1b1b;
+    --surface: #121212;
     --surface-raised: #1b1b1b;
-    --surface-sunken: #2c2c2c;
+    --surface-sunken: #2e2e2e;
     --surface-rail: #1b1b1b;
-    --surface-overlay: #2c2c2c;
-    --surface-hover: #ffffff0f;
+    --surface-overlay: #2e2e2e;
+    --surface-hover: #ffffff12;
+    --surface-selected: #2e2e2e;
+    --surface-modal: #2e2e2e;
+    --surface-chip: #3b3b3b;
 
-    --border: #303030;
-    --border-strong: #4f4f4f;
+    --border: #2e2e2e;
+    --border-strong: #4a4a4a;
 
-    --ink: #f0f0f0;
+    --ink: #e9e9e9;
     --ink-2: #b9b9b9;
-    --ink-3: #8f8f8f;
-    --ink-inverse: #1b1b1b;
+    --ink-3: #8b8b8b;
+    --ink-inverse: #121212;
 
-    --bubble-in: #2e2e2e;
-    --bubble-in-ink: #f0f0f0;
-    --bubble-out: #3a76f0;
+    --bubble-in: #3b3b3b;
+    --bubble-in-ink: #e9e9e9;
+    --bubble-out: #2c6bed;
     --bubble-out-ink: #ffffff;
 
-    --danger: #e8606b;
+    --danger: #f27b7b;
+    --danger-soft: #4a2426;
     --success: #5cb270;
     --warning: #e0a04a;
   }
@@ -147,6 +163,11 @@
   --color-surface-rail: var(--surface-rail);
   --color-surface-overlay: var(--surface-overlay);
   --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
+  --color-surface-modal: var(--surface-modal);
+  --color-surface-chip: var(--surface-chip);
+  --color-link: var(--link);
+  --color-danger-soft: var(--danger-soft);
 
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
@@ -173,7 +194,7 @@
   --radius-composer: 24px;
 
   --spacing-rail: 64px;
-  --spacing-list: 340px;
+  --spacing-list: 320px;
   --spacing-list-min: 280px;
   --spacing-list-max: 380px;
   --spacing-row: 72px;
@@ -198,9 +219,13 @@ body {
   scrollbar-color: var(--border-strong) transparent;
 }
 
-:focus-visible {
-  outline: 2px solid var(--ultramarine);
-  outline-offset: 2px;
+/* In the base layer so a field's own focus style (outline-none plus a
+   ring) wins over this default. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--ultramarine);
+    outline-offset: 2px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -225,4 +250,35 @@ body {
     transform: translateY(-3px);
     opacity: 1;
   }
+}
+
+/* Story viewer progress segments fill over the slide's duration. */
+@keyframes story-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* Pop-in for menus, pickers and dialogs, the way Signal eases them in. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-pop-in {
+  animation: pop-in 120ms ease-out;
+}
+
+/* Hide the native clear button on search fields; Signal draws none. */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
 }

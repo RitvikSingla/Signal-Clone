@@ -7,7 +7,7 @@ assembles them.
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -45,6 +45,18 @@ def create_app() -> FastAPI:
     # The socket sits outside the versioned prefix: it is not a REST
     # resource and its protocol is versioned by the frame types instead.
     app.include_router(realtime_router)
+
+    @app.middleware("http")
+    async def media_headers(request: Request, call_next):
+        """Uploaded files are served from this origin, so never let a browser
+        sniff one into something executable, and make opaque files download."""
+        response = await call_next(request)
+        if request.url.path.startswith(settings.media_url_prefix):
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["Content-Security-Policy"] = "default-src 'none'; sandbox"
+            if request.url.path.endswith(".bin"):
+                response.headers["Content-Disposition"] = "attachment"
+        return response
 
     settings.media_root.mkdir(parents=True, exist_ok=True)
     app.mount(

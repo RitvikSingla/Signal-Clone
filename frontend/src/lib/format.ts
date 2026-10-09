@@ -17,12 +17,24 @@ function daysApart(a: Date, b: Date): number {
   return Math.round((startOfDay(b) - startOfDay(a)) / DAY_MS);
 }
 
-/** Clock time inside a bubble, for example 09:14. */
+/** Clock time inside a bubble, as Signal writes it: "9:00 am". */
 export function clockTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return new Date(iso)
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    .replace("AM", "am")
+    .replace("PM", "pm");
+}
+
+/** "Today 10:15 am", "Yesterday 9:02 pm" or "3 Oct 9:02 pm", for Info. */
+export function fullTimestamp(iso: string): string {
+  return `${dayDivider(iso)} ${clockTime(iso)}`;
+}
+
+/** 1.2 MB, 340 KB: the size line on a file card. */
+export function fileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** Right-hand timestamp on a conversation row. */
@@ -31,7 +43,7 @@ export function listTimestamp(iso: string): string {
   const now = new Date();
   const days = daysApart(then, now);
 
-  if (days === 0) return clockTime(iso);
+  if (days === 0) return bubbleTime(iso, now.getTime());
   if (days === 1) return "Yesterday";
   if (days < 7) return then.toLocaleDateString(undefined, { weekday: "short" });
   return then.toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -90,6 +102,41 @@ export function avatarBackground(colorKey: string): string {
   return `var(--${colorKey.toLowerCase()}, var(--a200))`;
 }
 
+/**
+ * Signal Desktop draws an initials avatar as a pale tint with the initials
+ * in the saturated version of the same hue, in both themes. These are its
+ * twelve pairs, keyed by the same A100..A210 ids the backend assigns.
+ */
+const AVATAR_PAIRS: Record<string, { bg: string; fg: string }> = {
+  A100: { bg: "#e3e3fe", fg: "#3838f5" },
+  A110: { bg: "#dde7fc", fg: "#1251d3" },
+  A120: { bg: "#d8e8f0", fg: "#086da0" },
+  A130: { bg: "#cde4cd", fg: "#067906" },
+  A140: { bg: "#eae0fd", fg: "#661aff" },
+  A150: { bg: "#f5e3fe", fg: "#9f00f0" },
+  A160: { bg: "#f6d8ec", fg: "#b8057c" },
+  A170: { bg: "#f5d7d7", fg: "#be0404" },
+  A180: { bg: "#fef5d0", fg: "#836b01" },
+  A190: { bg: "#eae6d5", fg: "#7d6f40" },
+  A200: { bg: "#d2d2dc", fg: "#4f4f6d" },
+  A210: { bg: "#d7d7d9", fg: "#5c5c5c" },
+};
+
+export function avatarColors(colorKey: string): { bg: string; fg: string } {
+  return AVATAR_PAIRS[colorKey.toUpperCase()] ?? AVATAR_PAIRS.A200;
+}
+
+/**
+ * The timestamp inside a bubble. Signal counts recent messages in minutes
+ * ("Now", "11m") and switches to the clock after an hour.
+ */
+export function bubbleTime(iso: string, now: number = Date.now()): string {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60_000);
+  if (minutes < 1) return "Now";
+  if (minutes < 60) return `${minutes}m`;
+  return clockTime(iso);
+}
+
 /** The preview line under a conversation title. */
 export function previewText(
   body: string | null,
@@ -98,16 +145,22 @@ export function previewText(
   senderName: string | null,
   isGroup: boolean,
   isMine: boolean,
+  event?: string | null,
 ): string {
+  if (type === "system" && event === "pinned") {
+    const who = isMine ? "You" : (senderName?.split(" ")[0] ?? "Someone");
+    return `📌 ${who} pinned a message`;
+  }
+
   let text: string;
   if (isDeleted) text = "This message was deleted";
-  else if (type === "image") text = "Photo";
-  else if (type === "file") text = "File";
+  else if (type === "image") text = body ? `📷 ${body}` : "📷 Photo";
+  else if (type === "file") text = body ? `📎 ${body}` : "📎 File";
   else text = body ?? "";
 
   if (type === "system") return text;
-  if (isMine) return `You: ${text}`;
-  if (isGroup && senderName) return `${senderName.split(" ")[0]}: ${text}`;
+  // Signal Desktop does not prefix your own messages with "You:".
+  if (isGroup && senderName && !isMine) return `${senderName.split(" ")[0]}: ${text}`;
   return text;
 }
 

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.core.deps import DbSession, RegisteredUser
 from app.schemas.message import (
     EditMessageIn,
+    ForwardIn,
+    MessageInfoOut,
     MessageOut,
     MessageSearchHit,
+    PinMessageIn,
     ReactionIn,
 )
 from app.realtime import broadcast
@@ -79,3 +82,62 @@ async def unreact(message_id: str, user: RegisteredUser, db: DbSession) -> Messa
         raise _fail(exc) from exc
     await broadcast.message_updated(db, message)
     return message
+
+
+@router.put("/messages/{message_id}/pin", response_model=MessageOut)
+async def pin(
+    message_id: str, payload: PinMessageIn, user: RegisteredUser, db: DbSession
+) -> MessageOut:
+    """Pin for everyone in the thread, for a duration or forever (null)."""
+    try:
+        changed, event = await message_service.pin_message(
+            db, user, message_id, payload.duration_seconds
+        )
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    for message in changed:
+        await broadcast.message_updated(db, message)
+    # No optimistic copy exists anywhere, so every member gets the event.
+    await broadcast.message_created(db, event, None)
+    return next(m for m in changed if m.id == message_id)
+
+
+@router.delete("/messages/{message_id}/pin", response_model=MessageOut)
+async def unpin(message_id: str, user: RegisteredUser, db: DbSession) -> MessageOut:
+    try:
+        message = await message_service.unpin_message(db, user, message_id)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    await broadcast.message_updated(db, message)
+    return message
+
+
+@router.post("/messages/{message_id}/hide", status_code=204, response_class=Response)
+async def hide(message_id: str, user: RegisteredUser, db: DbSession) -> Response:
+    """Delete for me. Nobody else is told, because nothing changed for them."""
+    try:
+        await message_service.hide_message(db, user, message_id)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    return Response(status_code=204)
+
+
+@router.post("/messages/forward", response_model=list[MessageOut])
+async def forward(payload: ForwardIn, user: RegisteredUser, db: DbSession) -> list[MessageOut]:
+    try:
+        created = await message_service.forward_messages(
+            db, user, payload.message_ids, payload.conversation_ids
+        )
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    for message in created:
+        await broadcast.message_created(db, message, user.id)
+    return created
+
+
+@router.get("/messages/{message_id}/info", response_model=MessageInfoOut)
+async def info(message_id: str, user: RegisteredUser, db: DbSession) -> MessageInfoOut:
+    try:
+        return await message_service.message_info(db, user, message_id)
+    except ConversationError as exc:
+        raise _fail(exc) from exc

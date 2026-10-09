@@ -36,6 +36,7 @@ export type MessagePreview = {
   body: string | null;
   status: MessageStatus;
   is_deleted: boolean;
+  event?: string | null;
   created_at: string;
 };
 
@@ -111,7 +112,25 @@ export type Message = {
   edited_at: string | null;
   deleted_at: string | null;
   expires_at: string | null;
+  is_forwarded?: boolean;
+  /** Set on system rows: "pinned" means reply_to is the pinned message. */
+  event?: string | null;
+  /** Present only while the pin is live. */
+  pinned_at?: string | null;
+  pin_expires_at?: string | null;
+  pinned_by?: string | null;
   created_at: string;
+};
+
+export type Receipt = {
+  user: UserPublic;
+  delivered_at: string | null;
+  read_at: string | null;
+};
+
+export type MessageInfo = {
+  message: Message;
+  receipts: Receipt[];
 };
 
 export type MessagePage = {

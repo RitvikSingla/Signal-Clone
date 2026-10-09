@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -93,6 +94,22 @@ class Message(UUIDPrimaryKeyMixin, Base):
     #: Set at insert time when the thread has a timer running.
     expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
+    #: A copy sent through Forward. Signal labels the bubble "Forwarded".
+    is_forwarded: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False
+    )
+    #: What a system row records, so the client can draw it properly:
+    #: "pinned" for "You pinned a message", whose reply_to_id is the target.
+    event: Mapped[str | None] = mapped_column(String(20))
+
+    #: Pinned to the top of the thread for everyone, until pin_expires_at
+    #: (null means "Forever"). pinned_by_id carries no foreign key because
+    #: SQLite cannot add one to an existing table without a rebuild, and a
+    #: rebuild would drop the full-text triggers on this table.
+    pinned_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    pin_expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    pinned_by_id: Mapped[str | None] = mapped_column(String(36))
+
     created_at: Mapped[datetime] = mapped_column(
         UtcDateTime, default=utcnow, nullable=False
     )
@@ -113,7 +130,10 @@ class Message(UUIDPrimaryKeyMixin, Base):
         back_populates="message", cascade="all, delete-orphan"
     )
     attachments: Mapped[list[Attachment]] = relationship(
-        back_populates="message", cascade="all, delete-orphan"
+        back_populates="message",
+        cascade="all, delete-orphan",
+        # Album order is the order the sender picked; see send_message.
+        order_by="Attachment.created_at",
     )
 
     @property
@@ -123,6 +143,26 @@ class Message(UUIDPrimaryKeyMixin, Base):
     def __repr__(self) -> str:
         preview = (self.body or "")[:24]
         return f"<Message {self.type} {preview!r}>"
+
+
+class MessageHide(UUIDPrimaryKeyMixin, Base):
+    """Delete for me: the message stays for everyone else, but this person
+    never sees it again in their copy of the thread."""
+
+    __tablename__ = "message_hides"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_message_hides_pair"),
+    )
+
+    message_id: Mapped[str] = mapped_column(
+        ForeignKey("messages.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, default=utcnow, nullable=False
+    )
 
 
 class MessageReceipt(UUIDPrimaryKeyMixin, Base):

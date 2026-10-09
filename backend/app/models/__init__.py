@@ -17,7 +17,13 @@ from app.models.enums import (
     MessageStatus,
     MessageType,
 )
-from app.models.message import Attachment, Message, MessageReceipt, Reaction
+from app.models.message import (
+    Attachment,
+    Message,
+    MessageHide,
+    MessageReceipt,
+    Reaction,
+)
 from app.models.user import Contact, Device, User
 
 __all__ = [
@@ -33,6 +39,7 @@ __all__ = [
     "DevicePlatform",
     "MemberRole",
     "Message",
+    "MessageHide",
     "MessageReceipt",
     "MessageStatus",
     "MessageType",

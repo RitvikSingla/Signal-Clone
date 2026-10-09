@@ -9,14 +9,16 @@
  * cascading render that reading it inside an effect would cause.
  *
  * Three states, not two. "system" removes the attribute entirely and lets
- * prefers-color-scheme decide, which is what most people want.
+ * prefers-color-scheme decide. A first visit with nothing stored opens in
+ * dark, which is how the reference build of Signal Desktop is shown.
  */
 
 import { useSyncExternalStore } from "react";
 
 export type Theme = "system" | "light" | "dark";
 
-const STORAGE_KEY = "signal-theme";
+export const STORAGE_KEY = "signal-theme";
+export const DEFAULT_THEME: Theme = "dark";
 const listeners = new Set<() => void>();
 
 let cached: Theme | null = null;
@@ -25,10 +27,11 @@ function readStored(): Theme {
   if (cached !== null) return cached;
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    cached = value === "light" || value === "dark" ? value : "system";
+    cached =
+      value === "light" || value === "dark" || value === "system" ? value : DEFAULT_THEME;
   } catch {
-    // Private browsing can throw on access. The system default is fine.
-    cached = "system";
+    // Private browsing can throw on access. The default is fine.
+    cached = DEFAULT_THEME;
   }
   return cached;
 }
@@ -38,9 +41,9 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** Server render and first hydration agree on "system", so nothing flashes. */
+/** Server render and first hydration agree on the default, so nothing flashes. */
 function serverSnapshot(): Theme {
-  return "system";
+  return DEFAULT_THEME;
 }
 
 export function applyTheme(next: Theme): void {
@@ -61,9 +64,8 @@ export function applyTheme(next: Theme): void {
 /** Called once on boot so a saved choice survives a refresh. */
 export function restoreTheme(): void {
   const stored = readStored();
-  if (stored !== "system") {
-    document.documentElement.setAttribute("data-theme", stored);
-  }
+  if (stored === "system") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", stored);
 }
 
 export function useTheme(): Theme {

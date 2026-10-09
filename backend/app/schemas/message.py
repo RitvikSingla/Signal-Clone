@@ -47,6 +47,7 @@ class MessagePreview(BaseModel):
     body: str | None
     status: MessageStatus
     is_deleted: bool
+    event: str | None = None
     created_at: datetime
 
 
@@ -65,6 +66,12 @@ class MessageOut(BaseModel):
     edited_at: datetime | None
     deleted_at: datetime | None
     expires_at: datetime | None
+    is_forwarded: bool = False
+    event: str | None = None
+    #: Set only while the pin is live; an expired pin reads as unpinned.
+    pinned_at: datetime | None = None
+    pin_expires_at: datetime | None = None
+    pinned_by: str | None = None
     created_at: datetime
 
     @property
@@ -97,6 +104,29 @@ class SendMessageIn(BaseModel):
         if not (self.body and self.body.strip()) and not self.attachment_ids:
             raise ValueError("A message needs text or an attachment.")
         return self
+
+
+class PinMessageIn(BaseModel):
+    #: Signal offers 24 hours, 7 days, 30 days or Forever (null).
+    duration_seconds: int | None = Field(default=604800, ge=60, le=31_536_000)
+
+
+class ForwardIn(BaseModel):
+    message_ids: list[str] = Field(min_length=1, max_length=30)
+    conversation_ids: list[str] = Field(min_length=1, max_length=10)
+
+
+class ReceiptOut(BaseModel):
+    user: UserPublic
+    delivered_at: datetime | None
+    read_at: datetime | None
+
+
+class MessageInfoOut(BaseModel):
+    """The Info screen: the message, and per recipient when it arrived."""
+
+    message: MessageOut
+    receipts: list[ReceiptOut]
 
 
 class EditMessageIn(BaseModel):

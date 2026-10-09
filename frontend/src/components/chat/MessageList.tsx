@@ -7,13 +7,19 @@
  * the view sticks to the bottom as messages arrive, unless the reader has
  * scrolled up to read history; and paging older messages upward preserves
  * the scroll position rather than jumping.
+ *
+ * Layout follows Signal Desktop: the conversation hero card first, a plain
+ * centred day label ("Today"), incoming bubbles against the left edge and
+ * outgoing against the right, with no column in the middle. An accepted
+ * message request leaves its event line at the moment it was accepted.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
-import { MessageBubble } from "@/components/chat/MessageBubble";
+import { MessageBubble, type BubbleActions } from "@/components/chat/MessageBubble";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
-import { LockIcon } from "@/components/ui/Icons";
+import { PinIcon } from "@/components/ui/Icons";
+import { useNow } from "@/hooks/useNow";
 import { dayDivider, isSameDay } from "@/lib/format";
 import type { Message } from "@/lib/types";
 
@@ -25,9 +31,16 @@ type MessageListProps = {
   loading: boolean;
   conversationId: string;
   typingPeople: { userId: string; displayName: string }[];
+  hero: ReactNode;
+  /** An event to slot into the timeline, such as "You accepted the request". */
+  event: { at: string; node: ReactNode } | null;
+  highlightId: string | null;
+  /** Ids ticked in selection mode; null when not selecting. */
+  selection: string[] | null;
+  onToggleSelected: (message: Message) => void;
   onLoadOlder: () => void;
-  onReply: (message: Message) => void;
-  onReact: (message: Message, emoji: string) => void;
+  onJumpTo: (messageId: string) => void;
+  actions: BubbleActions;
 };
 
 /** Consecutive messages from one sender within this window form a run. */
@@ -41,14 +54,20 @@ export function MessageList({
   loading,
   conversationId,
   typingPeople,
+  hero,
+  event,
+  highlightId,
+  selection,
+  onToggleSelected,
   onLoadOlder,
-  onReply,
-  onReact,
+  onJumpTo,
+  actions,
 }: MessageListProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const previousHeight = useRef(0);
   const previousCount = useRef(0);
+  const now = useNow();
 
   // Jump to the newest message when the thread changes.
   useLayoutEffect(() => {
@@ -76,7 +95,36 @@ export function MessageList({
 
     previousHeight.current = element.scrollHeight;
     previousCount.current = messages.length;
-  }, [messages, pinnedToBottom, typingPeople.length]);
+  }, [messages, pinnedToBottom, typingPeople.length, event?.at]);
+
+  // The composer grows when a reply bar or staged files appear, which
+  // shrinks this pane; stay on the newest message rather than letting the
+  // bar cover it.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    let lastHeight = element.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const node = scroller.current;
+      if (!node) return;
+      const shrunk = node.clientHeight < lastHeight;
+      const gap = node.scrollHeight - node.scrollTop - node.clientHeight;
+      if (shrunk && gap < 80 + (lastHeight - node.clientHeight)) {
+        node.scrollTop = node.scrollHeight;
+      }
+      lastHeight = node.clientHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  // Bring a search match into view.
+  useEffect(() => {
+    if (!highlightId) return;
+    document
+      .getElementById(`msg-${highlightId}`)
+      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlightId]);
 
   // Page older messages when the reader reaches the top.
   useEffect(() => {
@@ -96,16 +144,24 @@ export function MessageList({
     return () => element.removeEventListener("scroll", handleScroll);
   }, [hasMore, loading, onLoadOlder]);
 
+  // Where the event line goes: before the first message newer than it.
+  const eventIndex = event
+    ? (() => {
+        const index = messages.findIndex((m) => m.created_at > event.at);
+        return index === -1 ? messages.length : index;
+      })()
+    : -1;
+
   return (
     <div
       ref={scroller}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 md:px-5"
     >
-      <div className="mx-auto flex w-full max-w-thread flex-col">
-        {!hasMore && <EncryptionNotice />}
+      <div className="flex w-full flex-col">
+        {!hasMore && hero}
 
         {hasMore && (
-          <div className="py-3 text-center text-[12px] text-ink-3">
+          <div className="py-3 text-center text-[12px] text-ink-2">
             {loading ? "Loading earlier messages…" : "Scroll up for more"}
           </div>
         )}
@@ -118,12 +174,23 @@ export function MessageList({
           const needsDivider =
             !previous || !isSameDay(previous.created_at, message.created_at);
 
+          const eventHere = index === eventIndex && event ? event.node : null;
+
           if (message.type === "system") {
             return (
-              <div key={message.id}>
+              <Fragment key={message.id}>
+                {eventHere}
                 {needsDivider && <DateDivider iso={message.created_at} />}
-                <SystemMessage text={message.body ?? ""} />
-              </div>
+                {message.event === "pinned" ? (
+                  <PinnedEvent
+                    who={message.sender?.id === currentUserId ? "You" : (message.sender?.display_name ?? "Someone")}
+                    targetId={message.reply_to?.id ?? null}
+                    onJumpTo={onJumpTo}
+                  />
+                ) : (
+                  <SystemMessage text={message.body ?? ""} />
+                )}
+              </Fragment>
             );
           }
 
@@ -146,20 +213,28 @@ export function MessageList({
               RUN_WINDOW_MS;
 
           return (
-            <div key={message.id}>
+            <Fragment key={message.id}>
+              {eventHere}
               {needsDivider && <DateDivider iso={message.created_at} />}
               <MessageBubble
                 message={message}
                 mine={mine}
                 isGroup={isGroup}
+                currentUserId={currentUserId}
+                now={now}
+                highlighted={message.id === highlightId}
                 startsRun={startsRun}
                 endsRun={endsRun}
-                onReply={onReply}
-                onReact={onReact}
+                selecting={selection !== null}
+                selected={selection?.includes(message.id) ?? false}
+                onToggleSelected={onToggleSelected}
+                actions={actions}
               />
-            </div>
+            </Fragment>
           );
         })}
+
+        {event && eventIndex === messages.length && event.node}
 
         <TypingIndicator people={typingPeople} isGroup={isGroup} />
       </div>
@@ -169,32 +244,45 @@ export function MessageList({
 
 function DateDivider({ iso }: { iso: string }) {
   return (
-    <div className="my-3 flex items-center justify-center">
-      <span className="rounded-full bg-surface-sunken px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-ink-2">
-        {dayDivider(iso)}
-      </span>
+    <div className="my-3 text-center text-[12px] font-medium text-ink-2">{dayDivider(iso)}</div>
+  );
+}
+
+/** "You pinned a message", with a button that jumps to it. */
+function PinnedEvent({
+  who,
+  targetId,
+  onJumpTo,
+}: {
+  who: string;
+  targetId: string | null;
+  onJumpTo: (messageId: string) => void;
+}) {
+  return (
+    <div className="my-3 flex flex-col items-center gap-2 text-center">
+      <p className="flex items-center gap-1.5 text-[12px] text-ink">
+        <PinIcon size={14} strokeWidth={1.7} className="text-ink-2" />
+        {who} pinned a message
+      </p>
+      {targetId && (
+        <button
+          type="button"
+          onClick={() => onJumpTo(targetId)}
+          className="rounded-full bg-surface-chip px-3 py-1 text-[12px] font-semibold text-link transition hover:brightness-110"
+        >
+          Go to message
+        </button>
+      )}
     </div>
   );
 }
 
 function SystemMessage({ text }: { text: string }) {
   return (
-    <div className="my-2 flex justify-center">
+    <div className="my-2.5 flex justify-center">
       <span className="max-w-[80%] text-center text-[12px] leading-snug text-ink-2">
         {text}
       </span>
-    </div>
-  );
-}
-
-function EncryptionNotice() {
-  return (
-    <div className="mx-auto my-4 flex max-w-[82%] items-start gap-2 rounded-lg bg-surface-sunken px-3 py-2 text-center">
-      <LockIcon className="mt-0.5 shrink-0 text-ink-3" />
-      <p className="text-left text-[12px] leading-snug text-ink-2">
-        Messages in this conversation are end-to-end encrypted. This clone
-        simulates the protocol rather than implementing it.
-      </p>
     </div>
   );
 }

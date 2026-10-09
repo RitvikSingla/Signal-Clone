@@ -1,4 +1,4 @@
-"""Message rules: send, page, edit, delete, react, search.
+"""Message rules: send, page, edit, delete, react, pin, forward, search.
 
 The status rollup is the part worth understanding. A message row caches a
 single status so the thread renders without an aggregate per bubble, but the
@@ -9,9 +9,10 @@ into the one value the sender sees.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, text
+from sqlalchemy import exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +22,7 @@ from app.models import (
     Conversation,
     ConversationMember,
     Message,
+    MessageHide,
     MessageReceipt,
     MessageStatus,
     MessageType,
@@ -30,11 +32,13 @@ from app.models import (
 from app.schemas.common import UserPublic
 from app.schemas.message import (
     AttachmentOut,
+    MessageInfoOut,
     MessageOut,
     MessagePage,
     MessageSearchHit,
     QuotedMessage,
     ReactionOut,
+    ReceiptOut,
 )
 from app.services.conversation_service import ConversationError, require_membership
 
@@ -42,6 +46,9 @@ DEFAULT_PAGE_SIZE = 40
 MAX_PAGE_SIZE = 100
 #: Signal allows an edit for a limited window after sending.
 EDIT_WINDOW = timedelta(hours=24)
+#: Signal keeps at most three pinned messages per chat; pinning a fourth
+#: unpins the oldest.
+MAX_PINS = 3
 
 
 def _now() -> datetime:
@@ -75,8 +82,17 @@ def _attachment_out(attachment: Attachment) -> AttachmentOut:
     )
 
 
+def _pin_live(message: Message, now: datetime | None = None) -> bool:
+    if message.pinned_at is None or message.deleted_at is not None:
+        return False
+    if message.pin_expires_at is None:
+        return True
+    return message.pin_expires_at > (now or _now())
+
+
 def to_out(message: Message) -> MessageOut:
     """Serialise a fully loaded message. Relationships must be eager-loaded."""
+    pinned = _pin_live(message)
     quoted: QuotedMessage | None = None
     if message.reply_to is not None:
         target = message.reply_to
@@ -112,6 +128,11 @@ def to_out(message: Message) -> MessageOut:
         edited_at=message.edited_at,
         deleted_at=message.deleted_at,
         expires_at=message.expires_at,
+        is_forwarded=message.is_forwarded,
+        event=message.event,
+        pinned_at=message.pinned_at if pinned else None,
+        pin_expires_at=message.pin_expires_at if pinned else None,
+        pinned_by=message.pinned_by_id if pinned else None,
         created_at=message.created_at,
     )
 
@@ -155,7 +176,13 @@ async def list_messages(
     await require_membership(db, user, conversation_id)
     limit = max(1, min(limit, MAX_PAGE_SIZE))
 
-    stmt = select(Message).where(Message.conversation_id == conversation_id)
+    stmt = select(Message).where(
+        Message.conversation_id == conversation_id,
+        # Delete for me: hidden rows never reach this reader again.
+        ~exists().where(
+            MessageHide.message_id == Message.id, MessageHide.user_id == user.id
+        ),
+    )
 
     if before:
         anchor = await db.get(Message, before)
@@ -250,6 +277,7 @@ async def send_message(
     body: str | None,
     reply_to_id: str | None,
     attachment_ids: list[str],
+    is_forwarded: bool = False,
 ) -> tuple[MessageOut, bool]:
     """Persist a message. Returns (message, was_created).
 
@@ -293,15 +321,23 @@ async def send_message(
         client_id=client_id,
         created_at=now,
         expires_at=expires_at,
+        is_forwarded=is_forwarded,
     )
     db.add(message)
     await db.flush()
 
-    for attachment_id in attachment_ids:
+    for position, attachment_id in enumerate(attachment_ids):
         attachment = await db.get(Attachment, attachment_id)
-        if attachment is None or attachment.uploader_id != user.id:
+        if (
+            attachment is None
+            or attachment.uploader_id != user.id
+            or attachment.message_id is not None
+        ):
             raise ConversationError("That attachment does not exist.", 404)
         attachment.message_id = message.id
+        # Uploads finish in any order; restamp so the album keeps the order
+        # the sender chose, which is the order of attachment_ids.
+        attachment.created_at = now + timedelta(microseconds=position)
         if not attachment.content_type.startswith("image/"):
             message.type = MessageType.FILE
 
@@ -469,6 +505,215 @@ async def clear_reaction(db: AsyncSession, user: User, message_id: str) -> Messa
         await db.delete(existing)
         await db.commit()
     return await load_out(db, message_id)
+
+
+async def _member_message(db: AsyncSession, user: User, message_id: str) -> Message:
+    message = await db.get(Message, message_id)
+    if message is None:
+        raise ConversationError("Message not found.", 404)
+    await require_membership(db, user, message.conversation_id)
+    return message
+
+
+async def hide_message(db: AsyncSession, user: User, message_id: str) -> None:
+    """Delete for me. Anyone in the thread may hide any message."""
+    await _member_message(db, user, message_id)
+    already = await db.scalar(
+        select(MessageHide).where(
+            MessageHide.message_id == message_id, MessageHide.user_id == user.id
+        )
+    )
+    if already is None:
+        db.add(MessageHide(message_id=message_id, user_id=user.id))
+        await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Pins
+# ---------------------------------------------------------------------------
+
+
+async def list_pins(db: AsyncSession, user: User, conversation_id: str) -> list[MessageOut]:
+    """Live pins, newest first, which is the order the banner cycles in."""
+    await require_membership(db, user, conversation_id)
+    now = _now()
+    rows = (
+        await db.scalars(
+            _with_relations(
+                select(Message)
+                .where(
+                    Message.conversation_id == conversation_id,
+                    Message.pinned_at.is_not(None),
+                    Message.deleted_at.is_(None),
+                )
+                .order_by(Message.pinned_at.desc())
+            )
+        )
+    ).unique().all()
+    return [to_out(m) for m in rows if _pin_live(m, now)]
+
+
+async def pin_message(
+    db: AsyncSession, user: User, message_id: str, duration_seconds: int | None
+) -> tuple[list[MessageOut], MessageOut]:
+    """Pin for everyone. Returns (messages whose pin state changed, the event).
+
+    Records a system row, "pinned a message", whose reply_to_id points at
+    the target so the thread can offer "Go to message".
+    """
+    message = await _member_message(db, user, message_id)
+    if message.deleted_at is not None or message.type == MessageType.SYSTEM:
+        raise ConversationError("That message can't be pinned.", 400)
+
+    now = _now()
+    changed: list[str] = [message.id]
+    message.pinned_at = now
+    message.pinned_by_id = user.id
+    message.pin_expires_at = (
+        now + timedelta(seconds=duration_seconds) if duration_seconds else None
+    )
+
+    # Keep the newest MAX_PINS; anything older is unpinned.
+    live = [
+        m
+        for m in (
+            await db.scalars(
+                select(Message)
+                .where(
+                    Message.conversation_id == message.conversation_id,
+                    Message.pinned_at.is_not(None),
+                    Message.id != message.id,
+                )
+                .order_by(Message.pinned_at.desc())
+            )
+        ).all()
+        if _pin_live(m, now)
+    ]
+    for stale in live[MAX_PINS - 1 :]:
+        stale.pinned_at = None
+        stale.pin_expires_at = None
+        stale.pinned_by_id = None
+        changed.append(stale.id)
+
+    client_id = f"pin-{uuid.uuid4()}"[:36]
+    event = Message(
+        conversation_id=message.conversation_id,
+        sender_id=user.id,
+        type=MessageType.SYSTEM,
+        event="pinned",
+        body="pinned a message",
+        envelope_hash=envelope_hash("pinned a message", client_id),
+        reply_to_id=message.id,
+        status=MessageStatus.SENT,
+        client_id=client_id,
+        created_at=now,
+    )
+    db.add(event)
+    await db.flush()
+
+    conversation = await db.get(Conversation, message.conversation_id)
+    if conversation is not None:
+        conversation.last_message_id = event.id
+        conversation.last_activity_at = now
+
+    await db.commit()
+    return [await load_out(db, mid) for mid in changed], await load_out(db, event.id)
+
+
+async def unpin_message(db: AsyncSession, user: User, message_id: str) -> MessageOut:
+    message = await _member_message(db, user, message_id)
+    message.pinned_at = None
+    message.pin_expires_at = None
+    message.pinned_by_id = None
+    await db.commit()
+    return await load_out(db, message_id)
+
+
+# ---------------------------------------------------------------------------
+# Forward and info
+# ---------------------------------------------------------------------------
+
+
+async def forward_messages(
+    db: AsyncSession, user: User, message_ids: list[str], conversation_ids: list[str]
+) -> list[MessageOut]:
+    """Send copies of messages into other threads, marked as forwarded.
+
+    Attachments are not re-uploaded: each copy gets new attachment rows that
+    point at the same stored file.
+    """
+    sources: list[Message] = []
+    for message_id in message_ids:
+        message = await db.scalar(
+            _with_relations(select(Message).where(Message.id == message_id))
+        )
+        if message is None:
+            raise ConversationError("Message not found.", 404)
+        await require_membership(db, user, message.conversation_id)
+        if message.deleted_at is not None or message.type == MessageType.SYSTEM:
+            raise ConversationError("That message can't be forwarded.", 400)
+        sources.append(message)
+    sources.sort(key=lambda m: m.created_at)
+
+    for conversation_id in conversation_ids:
+        await require_membership(db, user, conversation_id)
+
+    created: list[MessageOut] = []
+    for conversation_id in conversation_ids:
+        for source in sources:
+            copies: list[str] = []
+            for original in source.attachments:
+                copy = Attachment(
+                    uploader_id=user.id,
+                    file_name=original.file_name,
+                    content_type=original.content_type,
+                    size_bytes=original.size_bytes,
+                    storage_path=original.storage_path,
+                    width=original.width,
+                    height=original.height,
+                    thumbnail_path=original.thumbnail_path,
+                )
+                db.add(copy)
+                await db.flush()
+                copies.append(copy.id)
+            out, _ = await send_message(
+                db,
+                user,
+                conversation_id,
+                client_id=str(uuid.uuid4()),
+                body=source.body,
+                reply_to_id=None,
+                attachment_ids=copies,
+                is_forwarded=True,
+            )
+            created.append(out)
+    return created
+
+
+async def message_info(db: AsyncSession, user: User, message_id: str) -> MessageInfoOut:
+    message = await _member_message(db, user, message_id)
+    receipts = (
+        await db.scalars(
+            select(MessageReceipt)
+            .where(MessageReceipt.message_id == message.id)
+            .options(selectinload(MessageReceipt.user))
+        )
+    ).all()
+    # The sender sees everyone's receipts; a recipient sees only their own.
+    visible = [
+        r for r in receipts if message.sender_id == user.id or r.user_id == user.id
+    ]
+    return MessageInfoOut(
+        message=await load_out(db, message.id),
+        receipts=[
+            ReceiptOut(
+                user=UserPublic.model_validate(r.user),
+                delivered_at=r.delivered_at,
+                read_at=r.read_at,
+            )
+            for r in visible
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------

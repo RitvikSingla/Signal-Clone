@@ -30,7 +30,7 @@ someone else is in [`docs/Signal-Clone-Walkthrough.pdf`](docs/Signal-Clone-Walkt
 | 08 | Chat pane: typing, live receipts | Done |
 | 09 | Group admin UI | Partly done |
 | 10 | Settings and placeholders | Done |
-| 11 | Bonus: attachments, disappearing | Not started |
+| 11 | Bonus: attachments, disappearing | Partly done: attachments, pin, forward, delete for me; disappearing sweep not started |
 | 12 | Documentation and deploy | Not started |
 
 Messaging is live: two tabs on different accounts exchange messages, typing
@@ -63,7 +63,7 @@ python -m venv .venv
 pip install -r requirements.txt
 
 alembic upgrade head            # create the schema
-python -m app.db.seed           # eight accounts, eight threads, 166 messages
+python -m app.db.seed           # eight accounts, nine threads, 167 messages
 
 uvicorn app.main:app --reload --port 8000
 ```
@@ -88,7 +88,10 @@ as a one-tap button and fills the verification code for you.
 # with both servers running
 python backend/scripts/smoke_test.py          # 44 REST checks
 python backend/scripts/realtime_test.py       # 20 socket checks, two accounts
+python backend/scripts/actions_test.py        # 20 checks: pin, forward, delete for me, info, uploads
 node frontend/scripts/two-tab-test.mjs out/   # the live gate, in two real browsers
+node frontend/scripts/video-walkthrough.mjs out/                    # screens from reference video 1
+node frontend/scripts/message-actions-walkthrough.mjs out/ files/   # video 2 + attachments
 node frontend/scripts/screenshots.mjs out/    # captures the UI in Chrome
 ```
 

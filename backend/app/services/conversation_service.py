@@ -113,6 +113,7 @@ def _preview(message: Message | None) -> MessagePreview | None:
         body=None if message.deleted_at else message.body,
         status=message.status,
         is_deleted=message.deleted_at is not None,
+        event=message.event,
         created_at=message.created_at,
     )
 

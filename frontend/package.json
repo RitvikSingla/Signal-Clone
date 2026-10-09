@@ -12,6 +12,7 @@
     "next": "16.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "unicode-emoji-json": "0.9.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

@@ -29,7 +29,7 @@ export function TypingIndicator({ people, isGroup }: TypingIndicatorProps) {
         {isGroup && (
           <span className="mb-0.5 px-1 text-[12px] text-ink-2">{label}</span>
         )}
-        <div className="flex items-center gap-1 rounded-bubble rounded-bl-bubble-tail bg-bubble-in px-3.5 py-3">
+        <div className="flex h-[34px] items-center gap-[5px] rounded-bubble rounded-bl-bubble-tail bg-bubble-in px-3.5">
           <Dot delay="0ms" />
           <Dot delay="160ms" />
           <Dot delay="320ms" />
@@ -43,7 +43,7 @@ export function TypingIndicator({ people, isGroup }: TypingIndicatorProps) {
 function Dot({ delay }: { delay: string }) {
   return (
     <span
-      className="size-1.5 rounded-full bg-ink-3 motion-safe:animate-[typing-bounce_1.1s_ease-in-out_infinite]"
+      className="size-[7px] rounded-full bg-ink-2 motion-safe:animate-[typing-bounce_1.1s_ease-in-out_infinite]"
       style={{ animationDelay: delay }}
     />
   );

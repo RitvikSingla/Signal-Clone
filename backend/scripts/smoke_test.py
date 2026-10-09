@@ -43,7 +43,8 @@ sofia = login("+393401234505")
 print("\n--- conversation list ---")
 code, convs = curl("GET", "/conversations", ritvik)
 ok("list returns 200", code == 200, convs)
-ok("six threads for Ritvik", len(convs) == 6, len(convs))
+# Six of his own plus the seeded message request from Lucas.
+ok("seven threads for Ritvik", len(convs) == 7, len(convs))
 ok("pinned thread sorts first", convs[0]["is_pinned"] is True, convs[0]["title"])
 ok("direct thread borrows the peer name",
    any(c["type"] == "direct" and c["title"] == "Aarav Mehta" for c in convs))

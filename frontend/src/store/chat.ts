@@ -14,8 +14,10 @@
 import { create } from "zustand";
 
 import { ApiError } from "@/lib/api";
-import { conversationApi, messageApi } from "@/lib/endpoints";
+import { conversationApi, messageApi, userApi } from "@/lib/endpoints";
 import type {
+  Attachment,
+  Contact,
   ConversationDetail,
   ConversationSummary,
   Message,
@@ -45,15 +47,51 @@ type ChatState = {
   setFilter: (filter: ListFilter) => void;
   setSearch: (search: string) => void;
 
-  openConversation: (id: string) => Promise<void>;
+  /**
+   * markRead is false for a pending message request: Signal does not tell
+   * the sender anything was read until the request is accepted.
+   */
+  openConversation: (id: string, options?: { markRead?: boolean }) => Promise<void>;
+  markConversationRead: (id: string) => Promise<void>;
+  clearReaction: (messageId: string) => Promise<void>;
   closeConversation: () => void;
   loadOlder: (id: string) => Promise<void>;
 
-  sendMessage: (id: string, body: string, replyToId?: string | null) => Promise<void>;
+  sendMessage: (
+    id: string,
+    body: string,
+    replyToId?: string | null,
+    attachments?: Attachment[],
+  ) => Promise<void>;
+  editMessage: (messageId: string, body: string) => Promise<void>;
+  /** Delete for me: gone from this person's copy of the thread only. */
+  hideMessages: (conversationId: string, messageIds: string[]) => Promise<void>;
+  forwardMessages: (messageIds: string[], conversationIds: string[]) => Promise<void>;
+
+  /** Conversation id -> live pinned messages, newest first. */
+  pins: Record<string, Message[]>;
+  loadPins: (conversationId: string) => Promise<void>;
+  pinMessage: (messageId: string, durationSeconds: number | null) => Promise<void>;
+  unpinMessage: (messageId: string) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
 
   togglePin: (id: string) => Promise<void>;
+  setArchived: (id: string, archived: boolean) => Promise<void>;
+
+  // --- address book, message requests, archive ---------------------------
+
+  contacts: Contact[];
+  /** Group id -> member user ids, for "Member of ..." on a contact's hero. */
+  groupMembers: Record<string, string[]>;
+  archived: ConversationSummary[];
+  loadContacts: () => Promise<void>;
+  loadGroupMembers: () => Promise<void>;
+  loadArchived: () => Promise<void>;
+  /** Accepting a request is adding the sender to the address book. */
+  acceptRequest: (peerId: string) => Promise<void>;
+  /** Blocking files the sender as a blocked contact and archives the chat. */
+  blockPeer: (conversationId: string, peerId: string) => Promise<void>;
 
   /** Applied when a message arrives from somewhere other than this tab. */
   upsertMessage: (message: Message) => void;
@@ -103,6 +141,10 @@ export const useChat = create<ChatState>((set, get) => ({
   threads: {},
   typing: {},
   pendingDelivery: [],
+  contacts: [],
+  groupMembers: {},
+  archived: [],
+  pins: {},
 
   loadConversations: async () => {
     set({ listLoading: true, listError: null });
@@ -121,7 +163,7 @@ export const useChat = create<ChatState>((set, get) => ({
   setFilter: (filter) => set({ filter }),
   setSearch: (search) => set({ search }),
 
-  openConversation: async (id) => {
+  openConversation: async (id, options) => {
     set({ activeId: id, detail: null });
 
     const existing = get().threads[id];
@@ -135,6 +177,7 @@ export const useChat = create<ChatState>((set, get) => ({
       conversationApi.get(id),
       messageApi.list(id, { limit: 40 }),
     ]);
+    void get().loadPins(id);
 
     // Guard against a slow response for a thread the user has since left.
     if (get().activeId !== id) return;
@@ -153,15 +196,23 @@ export const useChat = create<ChatState>((set, get) => ({
     }));
 
     // Opening a thread clears its badge, both locally and on the server.
-    const last = page.messages.at(-1);
-    if (last) {
-      await conversationApi.markRead(id, last.id);
-      set((state) => ({
-        conversations: state.conversations.map((c) =>
-          c.id === id ? { ...c, unread_count: 0 } : c,
-        ),
-      }));
-    }
+    if (options?.markRead !== false) await get().markConversationRead(id);
+  },
+
+  markConversationRead: async (id) => {
+    const last = get().threads[id]?.messages.at(-1);
+    if (!last || last.id.startsWith("pending-")) return;
+    await conversationApi.markRead(id, last.id);
+    set((state) => ({
+      conversations: state.conversations.map((c) =>
+        c.id === id ? { ...c, unread_count: 0 } : c,
+      ),
+    }));
+  },
+
+  clearReaction: async (messageId) => {
+    const updated = await messageApi.clearReaction(messageId);
+    get().upsertMessage(updated);
   },
 
   closeConversation: () => set({ activeId: null, detail: null }),
@@ -192,9 +243,9 @@ export const useChat = create<ChatState>((set, get) => ({
     });
   },
 
-  sendMessage: async (id, body, replyToId = null) => {
+  sendMessage: async (id, body, replyToId = null, attachments = []) => {
     const text = body.trim();
-    if (!text) return;
+    if (!text && attachments.length === 0) return;
 
     const clientId = crypto.randomUUID();
     const me = get().detail?.members.find(() => true);
@@ -205,14 +256,18 @@ export const useChat = create<ChatState>((set, get) => ({
       id: `pending-${clientId}`,
       conversation_id: id,
       sender: me ? me.user : null,
-      type: "text",
-      body: text,
+      type: attachments.length
+        ? attachments.every((a) => a.content_type.startsWith("image/"))
+          ? "image"
+          : "file"
+        : "text",
+      body: text || null,
       envelope_hash: "",
       status: "sending",
       client_id: clientId,
-      reply_to: null,
+      reply_to: replyQuote(get().threads[id]?.messages ?? [], replyToId),
       reactions: [],
-      attachments: [],
+      attachments,
       edited_at: null,
       deleted_at: null,
       expires_at: null,
@@ -232,8 +287,9 @@ export const useChat = create<ChatState>((set, get) => ({
     try {
       const saved = await messageApi.send(id, {
         client_id: clientId,
-        body: text,
+        body: text || null,
         reply_to_id: replyToId,
+        attachment_ids: attachments.map((a) => a.id),
       });
       get().upsertMessage(saved);
     } catch {
@@ -256,6 +312,60 @@ export const useChat = create<ChatState>((set, get) => ({
     }
   },
 
+  editMessage: async (messageId, body) => {
+    const updated = await messageApi.edit(messageId, body.trim());
+    get().upsertMessage(updated);
+  },
+
+  hideMessages: async (conversationId, messageIds) => {
+    await Promise.all(messageIds.map((mid) => messageApi.hide(mid)));
+    set((state) => {
+      const thread = state.threads[conversationId];
+      if (!thread) return {};
+      return {
+        threads: {
+          ...state.threads,
+          [conversationId]: {
+            ...thread,
+            messages: thread.messages.filter((m) => !messageIds.includes(m.id)),
+          },
+        },
+        pins: {
+          ...state.pins,
+          [conversationId]: (state.pins[conversationId] ?? []).filter(
+            (m) => !messageIds.includes(m.id),
+          ),
+        },
+      };
+    });
+  },
+
+  forwardMessages: async (messageIds, conversationIds) => {
+    const created = await messageApi.forward(messageIds, conversationIds);
+    for (const message of created) get().upsertMessage(message);
+  },
+
+  loadPins: async (conversationId) => {
+    try {
+      const rows = await messageApi.pins(conversationId);
+      set((state) => ({ pins: { ...state.pins, [conversationId]: rows } }));
+    } catch {
+      // The banner is optional; the thread still works without it.
+    }
+  },
+
+  pinMessage: async (messageId, durationSeconds) => {
+    const updated = await messageApi.pin(messageId, durationSeconds);
+    get().upsertMessage(updated);
+    // Pinning may have pushed out the oldest of three, so resync.
+    await get().loadPins(updated.conversation_id);
+  },
+
+  unpinMessage: async (messageId) => {
+    const updated = await messageApi.unpin(messageId);
+    get().upsertMessage(updated);
+  },
+
   react: async (messageId, emoji) => {
     const updated = await messageApi.react(messageId, emoji);
     get().upsertMessage(updated);
@@ -275,6 +385,80 @@ export const useChat = create<ChatState>((set, get) => ({
         state.conversations.map((c) => (c.id === id ? updated : c)),
       ),
     }));
+  },
+
+  setArchived: async (id, archived) => {
+    const updated = await conversationApi.setPrefs(id, { is_archived: archived });
+    set((state) => {
+      const rest = state.conversations.filter((c) => c.id !== id);
+      const restArchived = state.archived.filter((c) => c.id !== id);
+      return archived
+        ? {
+            conversations: rest,
+            archived: sortConversations([...restArchived, updated]),
+            activeId: state.activeId === id ? null : state.activeId,
+            detail: state.activeId === id ? null : state.detail,
+          }
+        : {
+            conversations: sortConversations([...rest, updated]),
+            archived: restArchived,
+          };
+    });
+  },
+
+  loadContacts: async () => {
+    try {
+      set({ contacts: await userApi.contacts() });
+    } catch {
+      // The list still works without the address book; requests just will
+      // not be told apart until the next load.
+    }
+  },
+
+  loadGroupMembers: async () => {
+    const groups = get().conversations.filter((c) => c.type === "group");
+    const details = await Promise.allSettled(groups.map((g) => conversationApi.get(g.id)));
+    const map: Record<string, string[]> = {};
+    details.forEach((result) => {
+      if (result.status === "fulfilled") {
+        map[result.value.id] = result.value.members
+          .filter((m) => m.is_active)
+          .map((m) => m.user.id);
+      }
+    });
+    set({ groupMembers: map });
+  },
+
+  loadArchived: async () => {
+    try {
+      const rows = await conversationApi.list({ archived: true });
+      set({ archived: sortConversations(rows.filter((c) => c.is_archived)) });
+    } catch {
+      set({ archived: [] });
+    }
+  },
+
+  acceptRequest: async (peerId) => {
+    try {
+      const contact = await userApi.addContact({ user_id: peerId });
+      set((state) => ({
+        contacts: [...state.contacts.filter((c) => c.user.id !== peerId), contact],
+      }));
+    } catch (error) {
+      // Already in the address book from another tab: just resync.
+      if (error instanceof ApiError && error.status === 409) await get().loadContacts();
+      else throw error;
+    }
+  },
+
+  blockPeer: async (conversationId, peerId) => {
+    const existing = get().contacts.find((c) => c.user.id === peerId);
+    const contact = existing ?? (await userApi.addContact({ user_id: peerId }));
+    const blocked = await userApi.updateContact(contact.id, { is_blocked: true });
+    set((state) => ({
+      contacts: [...state.contacts.filter((c) => c.user.id !== peerId), blocked],
+    }));
+    await get().setArchived(conversationId, true);
   },
 
   upsertMessage: (message) => {
@@ -301,7 +485,12 @@ export const useChat = create<ChatState>((set, get) => ({
 
       const conversations = sortConversations(
         state.conversations.map((c) =>
-          c.id === message.conversation_id
+          // A reaction or pin on an older message must not replace the
+          // preview; only the newest message (or an update to it) does.
+          c.id === message.conversation_id &&
+          (c.last_message?.id === message.id ||
+            c.last_message?.id === `pending-${message.client_id}` ||
+            message.created_at >= c.last_activity_at)
             ? {
                 ...c,
                 last_activity_at: message.created_at,
@@ -313,6 +502,7 @@ export const useChat = create<ChatState>((set, get) => ({
                   body: message.body,
                   status: message.status,
                   is_deleted: message.deleted_at !== null,
+                  event: message.event ?? null,
                   created_at: message.created_at,
                 },
               }
@@ -320,8 +510,19 @@ export const useChat = create<ChatState>((set, get) => ({
         ),
       );
 
+      // Keep the pinned banner in step with pin and unpin frames.
+      const currentPins = state.pins[message.conversation_id] ?? [];
+      const withoutThis = currentPins.filter((m) => m.id !== message.id);
+      const pins =
+        message.pinned_at && !message.deleted_at
+          ? [message, ...withoutThis].sort((a, b) =>
+              (b.pinned_at ?? "").localeCompare(a.pinned_at ?? ""),
+            )
+          : withoutThis;
+
       return {
         conversations,
+        pins: { ...state.pins, [message.conversation_id]: pins },
         threads: { ...state.threads, [message.conversation_id]: { ...thread, messages } },
         // Anything that arrived from someone else and is not already in the
         // thread needs a delivery acknowledgement sent back over the socket.
@@ -397,3 +598,17 @@ export const useChat = create<ChatState>((set, get) => ({
     return ids;
   },
 }));
+
+/** The quoted strip for an optimistic reply, built from the loaded thread. */
+function replyQuote(messages: Message[], replyToId: string | null): Message["reply_to"] {
+  if (!replyToId) return null;
+  const target = messages.find((m) => m.id === replyToId);
+  if (!target) return null;
+  return {
+    id: target.id,
+    sender_name: target.sender?.display_name ?? null,
+    body: target.body,
+    type: target.type,
+    is_deleted: target.deleted_at !== null,
+  };
+}

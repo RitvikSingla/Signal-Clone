@@ -227,6 +227,15 @@ async def list_messages(
         raise _fail(exc) from exc
 
 
+@router.get("/{conversation_id}/pins", response_model=list[MessageOut])
+async def list_pins(conversation_id: str, user: RegisteredUser, db: DbSession) -> list[MessageOut]:
+    """Live pinned messages, newest first, for the banner under the header."""
+    try:
+        return await message_service.list_pins(db, user, conversation_id)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+
+
 @router.post("/{conversation_id}/messages", response_model=MessageOut)
 async def send_message(
     conversation_id: str,

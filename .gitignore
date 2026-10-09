@@ -13,6 +13,7 @@ venv/
 *.db-journal
 *.db-wal
 *.db-shm
+*.db.bak*
 
 # --- Uploaded media ---------------------------------------------------
 backend/media/*

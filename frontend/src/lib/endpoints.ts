@@ -5,13 +5,16 @@
  * one-line edit here instead of a search across the codebase.
  */
 
-import { api } from "./api";
+import { api, getAccessToken, ApiError } from "./api";
+import { config } from "./config";
 import type {
   Contact,
   ConversationDetail,
+  Attachment,
   ConversationSummary,
   DemoAccount,
   Message,
+  MessageInfo,
   MessagePage,
   MessageSearchHit,
   RequestCodeResponse,
@@ -130,7 +133,78 @@ export const messageApi = {
 
   search: (q: string) =>
     api.get<MessageSearchHit[]>(`/messages/search?q=${encodeURIComponent(q)}`),
+
+  /** durationSeconds null pins "Forever". */
+  pin: (messageId: string, durationSeconds: number | null) =>
+    api.put<Message>(`/messages/${messageId}/pin`, { duration_seconds: durationSeconds }),
+
+  unpin: (messageId: string) => api.delete<Message>(`/messages/${messageId}/pin`),
+
+  pins: (conversationId: string) =>
+    api.get<Message[]>(`/conversations/${conversationId}/pins`),
+
+  /** Delete for me. */
+  hide: (messageId: string) => api.post<void>(`/messages/${messageId}/hide`),
+
+  forward: (messageIds: string[], conversationIds: string[]) =>
+    api.post<Message[]>("/messages/forward", {
+      message_ids: messageIds,
+      conversation_ids: conversationIds,
+    }),
+
+  info: (messageId: string) => api.get<MessageInfo>(`/messages/${messageId}/info`),
 };
+
+/** Absolute URL for a path the API returns under /media. */
+export function mediaUrl(path: string): string {
+  return path.startsWith("http") ? path : `${config.apiUrl}${path}`;
+}
+
+/**
+ * Upload one file. XMLHttpRequest rather than fetch because only XHR reports
+ * upload progress, which the composer's thumbnails show as a ring.
+ */
+export function uploadAttachment(
+  file: File,
+  onProgress: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${config.apiUrl}${config.apiPrefix}/attachments`);
+    xhr.withCredentials = true;
+    const token = getAccessToken();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.onload = () => {
+      let payload: unknown = null;
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        // Fall through to the status check.
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(payload as Attachment);
+        return;
+      }
+      const detail =
+        payload && typeof payload === "object" && "detail" in payload
+          ? String((payload as { detail: unknown }).detail)
+          : "Upload failed";
+      reject(new ApiError(xhr.status, detail, payload));
+    };
+    xhr.onerror = () => reject(new ApiError(0, "Cannot reach the server.", null));
+    xhr.onabort = () => reject(new ApiError(0, "Upload cancelled.", null));
+    signal?.addEventListener("abort", () => xhr.abort());
+
+    const form = new FormData();
+    form.append("file", file);
+    xhr.send(form);
+  });
+}
 
 export const userApi = {
   updateProfile: (
@@ -147,6 +221,9 @@ export const userApi = {
 
   addContact: (payload: { user_id?: string; handle?: string }) =>
     api.post<Contact>("/contacts", payload),
+
+  updateContact: (contactId: string, payload: Partial<{ nickname: string; is_blocked: boolean }>) =>
+    api.patch<Contact>(`/contacts/${contactId}`, payload),
 
   removeContact: (contactId: string) =>
     api.delete<{ detail: string }>(`/contacts/${contactId}`),

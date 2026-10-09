@@ -12,6 +12,8 @@
 
 import { useState, type ReactNode } from "react";
 
+import { useToasts } from "@/components/ui/Toasts";
+
 import { PaneHeader, SidePane } from "@/components/shell/SidePane";
 import { Avatar } from "@/components/ui/Avatar";
 import {
@@ -24,16 +26,18 @@ import {
   DataIcon,
   HeartIcon,
   LockIcon,
+  MoreIcon,
   PencilIcon,
   PersonIcon,
   PhoneIcon,
   SlidersIcon,
 } from "@/components/ui/Icons";
+import { userApi } from "@/lib/endpoints";
 import { applyTheme, useTheme, type Theme } from "@/lib/theme";
 import { useSession } from "@/store/session";
 import type { UserPrivate } from "@/lib/types";
 
-type SectionId =
+export type SectionId =
   | "profile"
   | "account"
   | "donate"
@@ -65,9 +69,15 @@ const SECONDARY: NavEntry[] = [
   { id: "backups", label: "Backups", icon: <BackupIcon /> },
 ];
 
-export function SettingsPane({ user }: { user: UserPrivate }) {
-  const [section, setSection] = useState<SectionId>("profile");
-
+export function SettingsPane({
+  user,
+  section,
+  onSectionChange: setSection,
+}: {
+  user: UserPrivate;
+  section: SectionId;
+  onSectionChange: (section: SectionId) => void;
+}) {
   return (
     <>
       <SidePane>
@@ -78,27 +88,27 @@ export function SettingsPane({ user }: { user: UserPrivate }) {
             type="button"
             onClick={() => setSection("profile")}
             aria-current={section === "profile" ? "true" : undefined}
-            className={`mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
-              section === "profile" ? "bg-surface-sunken" : "hover:bg-surface-hover"
+            className={`mt-1 flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left transition-colors ${
+              section === "profile" ? "bg-surface-selected" : "hover:bg-surface-hover"
             }`}
           >
             <Avatar
               name={user.display_name}
               colorKey={user.avatar_color}
               url={user.avatar_url}
-              size={44}
+              size={36}
             />
             <span className="min-w-0">
-              <span className="block truncate text-[15px] font-semibold text-ink">
+              <span className="block truncate text-[13px] font-semibold text-ink">
                 {user.display_name}
               </span>
-              <span className="block truncate text-[13px] text-ink-2">
-                {user.phone_number}
+              <span className="block truncate text-[12px] text-ink-2">
+                {formatPhone(user.phone_number)}
               </span>
             </span>
           </button>
 
-          <nav className="mt-3 flex flex-col gap-0.5">
+          <nav className="mt-2 flex flex-col gap-0.5">
             {PRIMARY.map((entry) => (
               <NavRow
                 key={entry.id}
@@ -109,7 +119,7 @@ export function SettingsPane({ user }: { user: UserPrivate }) {
             ))}
           </nav>
 
-          <hr className="my-3 border-border" />
+          <div className="my-2" />
 
           <nav className="flex flex-col gap-0.5">
             {SECONDARY.map((entry) => (
@@ -145,13 +155,13 @@ function NavRow({
       type="button"
       onClick={() => onSelect(entry.id)}
       aria-current={active ? "page" : undefined}
-      className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-[14px] transition-colors ${
+      className={`flex items-center gap-3 rounded-lg px-3 py-[7px] text-left text-[13px] transition-colors ${
         active
-          ? "bg-surface-sunken text-ink"
+          ? "bg-surface-selected text-ink"
           : "text-ink hover:bg-surface-hover"
       }`}
     >
-      <span className="shrink-0 text-ink-2">{entry.icon}</span>
+      <span className="shrink-0 text-ink [&_svg]:size-[18px]">{entry.icon}</span>
       {entry.label}
     </button>
   );
@@ -167,6 +177,7 @@ function SectionContent({ id, user }: { id: SectionId; user: UserPrivate }) {
   if (id === "privacy") return <PrivacySection user={user} />;
   if (id === "notifications") return <NotificationsSection />;
   if (id === "account") return <AccountSection user={user} />;
+  if (id === "chats") return <ChatsSection />;
 
   const copy: Record<string, { title: string; body: string }> = {
     donate: {
@@ -176,10 +187,6 @@ function SectionContent({ id, user }: { id: SectionId; user: UserPrivate }) {
     general: {
       title: "General",
       body: "Start on login, minimise to the tray, spell check and language. Placeholders in this build.",
-    },
-    chats: {
-      title: "Chats",
-      body: "Message trimming, link previews and chat colours. Placeholders in this build.",
     },
     calls: {
       title: "Calls",
@@ -206,11 +213,21 @@ function SectionContent({ id, user }: { id: SectionId; user: UserPrivate }) {
 
 function Shell({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-xl px-6 py-7">
-      <h2 className="mb-6 text-center text-[16px] font-semibold text-ink">{title}</h2>
+    <div className="mx-auto w-full max-w-[640px] px-6 py-5">
+      <h2 className="mb-5 text-center text-[14px] font-semibold text-ink">{title}</h2>
       {children}
     </div>
   );
+}
+
+/** +919812345601 -> 098123 45601, the grouping Signal shows under the name. */
+function formatPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (phone.startsWith("+91") && digits.length === 12) {
+    const local = digits.slice(2);
+    return `0${local.slice(0, 5)} ${local.slice(5)}`;
+  }
+  return phone;
 }
 
 function ComingSoonChip() {
@@ -222,8 +239,9 @@ function ComingSoonChip() {
 }
 
 function ProfileSection({ user }: { user: UserPrivate }) {
-  const push = useSession((state) => state.patchUser);
-  void push;
+  const push = useToasts((state) => state.push);
+  const patchUser = useSession((state) => state.patchUser);
+  const [editing, setEditing] = useState<null | "name" | "about">(null);
 
   return (
     <Shell title="Profile">
@@ -232,50 +250,192 @@ function ProfileSection({ user }: { user: UserPrivate }) {
           name={user.display_name}
           colorKey={user.avatar_color}
           url={user.avatar_url}
-          size={96}
+          size={80}
         />
         <button
           type="button"
-          className="mt-3 rounded-full bg-surface-sunken px-3.5 py-1.5 text-[13px] font-medium text-ink transition-colors hover:bg-surface-hover"
+          onClick={() => push("Profile photos are a placeholder in this build.")}
+          className="mt-2.5 rounded-full bg-surface-chip px-3 py-1 text-[12px] font-semibold text-ink transition hover:brightness-110"
         >
           Edit photo
         </button>
       </div>
 
-      <div className="mt-8 flex flex-col">
-        <FieldRow icon={<PersonIcon />} value={user.display_name} />
-        <FieldRow icon={<PencilIcon />} value={user.about || "About"} />
-        <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-          Your profile and changes to it will be visible to people you message,
-          contacts and groups.
-        </p>
+      <div className="mt-6 overflow-hidden rounded-xl bg-surface-raised">
+        {editing ? (
+          <InlineEditor
+            label={editing === "name" ? "Your name" : "About"}
+            initial={editing === "name" ? user.display_name : (user.about ?? "")}
+            onCancel={() => setEditing(null)}
+            onSave={async (value) => {
+              try {
+                const updated = await userApi.updateProfile(
+                  editing === "name" ? { display_name: value } : { about: value },
+                );
+                patchUser(updated);
+                setEditing(null);
+              } catch {
+                push("Could not save your profile. Try again.");
+              }
+            }}
+          />
+        ) : (
+          <>
+            <FieldRow icon={<PersonIcon />} value={user.display_name} onClick={() => setEditing("name")} />
+            <FieldRow icon={<PencilIcon />} value={user.about || "About"} onClick={() => setEditing("about")} />
+          </>
+        )}
       </div>
+      <p className="mt-2.5 px-1 text-[12px] leading-relaxed text-ink-2">
+        Your profile and changes to it will be visible to people you message, contacts and
+        groups.
+      </p>
 
-      <hr className="my-6 border-border" />
-
-      <div className="flex flex-col">
+      <div className="mt-6 overflow-hidden rounded-xl bg-surface-raised">
         <FieldRow
           icon={<AtIcon />}
-          value={user.username ? `@${user.username}` : "Username"}
+          value={user.username ? user.username : "Username"}
+          trailing={<MoreIcon size={16} className="rotate-90 text-ink-2" />}
+          onClick={() => push("Changing your username is a placeholder in this build.")}
         />
-        <p className="mt-3 text-[13px] leading-relaxed text-ink-2">
-          People can now message you using your optional username so you do not have
-          to give out your phone number.
-        </p>
       </div>
+      <p className="mt-2.5 px-1 text-[12px] leading-relaxed text-ink-2">
+        People can now message you using your optional username so you don&rsquo;t have to
+        give out your phone number.
+      </p>
     </Shell>
   );
 }
 
-function FieldRow({ icon, value }: { icon: ReactNode; value: string }) {
+function InlineEditor({
+  label,
+  initial,
+  onCancel,
+  onSave,
+}: {
+  label: string;
+  initial: string;
+  onCancel: () => void;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [value, setValue] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex flex-col gap-2 p-3">
+      <label className="text-[12px] font-semibold text-ink-2">{label}</label>
+      <input
+        autoFocus
+        value={value}
+        maxLength={label === "About" ? 140 : 26}
+        onChange={(event) => setValue(event.target.value)}
+        className="h-9 rounded-lg bg-surface-sunken px-3 text-[13px] text-ink outline-none focus:ring-2 focus:ring-ultramarine"
+      />
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="h-8 rounded-full bg-surface-chip px-4 text-[12.5px] font-semibold text-ink"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy || (label !== "About" && !value.trim())}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await onSave(value.trim());
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="h-8 rounded-full bg-ultramarine px-4 text-[12.5px] font-semibold text-white disabled:opacity-50"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FieldRow({
+  icon,
+  value,
+  trailing,
+  onClick,
+}: {
+  icon: ReactNode;
+  value: string;
+  trailing?: ReactNode;
+  onClick?: () => void;
+}) {
   return (
     <button
       type="button"
-      className="flex items-center gap-4 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-surface-hover"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-surface-hover"
     >
-      <span className="shrink-0 text-ink-2">{icon}</span>
-      <span className="truncate text-[15px] text-ink">{value}</span>
+      <span className="shrink-0 text-ink [&_svg]:size-[17px]">{icon}</span>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{value}</span>
+      {trailing}
     </button>
+  );
+}
+
+function ChatsSection() {
+  const push = useToasts((state) => state.push);
+  const [folders, setFolders] = useState<string[]>([]);
+  const presets = ["Unread", "Direct chats", "Groups"];
+  return (
+    <Shell title="Chats">
+      <Group>
+        <Row label="Generate link previews" hint="Placeholder">
+          <Toggle on />
+        </Row>
+        <Row label="Use system emoji" hint="Placeholder">
+          <Toggle on={false} />
+        </Row>
+      </Group>
+
+      <h3 className="mb-2 mt-7 px-1 text-[13px] font-semibold text-ink">Chat folders</h3>
+      <p className="mb-3 px-1 text-[12px] leading-relaxed text-ink-2">
+        Organise your chats into folders and quickly switch between them on your chat list.
+      </p>
+      <Group>
+        <Row label="All chats">
+          <span className="text-[12px] text-ink-2">Default</span>
+        </Row>
+        {folders.map((folder) => (
+          <Row key={folder} label={folder}>
+            <span className="text-[12px] text-ink-2">Folder</span>
+          </Row>
+        ))}
+      </Group>
+
+      {folders.length < presets.length && (
+        <>
+          <h3 className="mb-2 mt-6 px-1 text-[12px] font-semibold text-ink-2">Suggested folders</h3>
+          <Group>
+            {presets
+              .filter((preset) => !folders.includes(preset))
+              .map((preset) => (
+                <Row key={preset} label={preset}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFolders((current) => [...current, preset]);
+                      push(`“${preset}” folder added`);
+                    }}
+                    className="h-7 rounded-full bg-surface-chip px-3 text-[12px] font-semibold text-ink hover:brightness-110"
+                  >
+                    Add
+                  </button>
+                </Row>
+              ))}
+          </Group>
+        </>
+      )}
+    </Shell>
   );
 }
 
@@ -285,30 +445,25 @@ function AppearanceSection() {
     <Shell title="Appearance">
       <Group>
         <Row label="Theme">
-          <div className="flex gap-1 rounded-full bg-surface-sunken p-1">
-            {(["system", "light", "dark"] as Theme[]).map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => applyTheme(option)}
-                className={`rounded-full px-3 py-1 text-[12px] font-medium capitalize transition-colors ${
-                  theme === option
-                    ? "bg-ultramarine text-white"
-                    : "text-ink-2 hover:text-ink"
-                }`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
+          <select
+            value={theme}
+            onChange={(event) => applyTheme(event.target.value as Theme)}
+            aria-label="Theme"
+            className="h-8 rounded-md bg-surface-chip px-2.5 text-[13px] text-ink outline-none focus:ring-2 focus:ring-ultramarine"
+          >
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
         </Row>
         <Row label="Chat colour" hint="Placeholder">
           <span className="size-5 rounded-full bg-ultramarine" aria-hidden />
         </Row>
       </Group>
       <p className="mt-4 text-[13px] leading-relaxed text-ink-2">
-        The theme is stored in this browser and applied before the app renders, so
-        it survives a refresh. System follows your operating system.
+        Dark is the default. The choice is stored in this browser and applied before
+        the first paint, so it survives a refresh. System follows your operating
+        system.
       </p>
     </Shell>
   );
@@ -401,7 +556,7 @@ function AccountSection({ user }: { user: UserPrivate }) {
 
 function Group({ children }: { children: ReactNode }) {
   return (
-    <div className="divide-y divide-border overflow-hidden rounded-xl border border-border">
+    <div className="divide-y divide-border overflow-hidden rounded-xl bg-surface-raised">
       {children}
     </div>
   );
@@ -419,7 +574,7 @@ function Row({
   return (
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="min-w-0 flex-1">
-        <div className="text-[14px] text-ink">{label}</div>
+        <div className="text-[13px] text-ink">{label}</div>
         {hint && <div className="text-[12px] text-ink-3">{hint}</div>}
       </div>
       {children}

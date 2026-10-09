@@ -5,10 +5,11 @@
  *
  * Most accounts have no photo, so the fallback is the common case rather
  * than the edge case: initials on the account's assigned swatch, which is
- * stable per person and is what makes a list of names scannable.
+ * stable per person and is what makes a list of names scannable. Signal
+ * draws that swatch as a pale tint with the initials in the strong colour.
  */
 
-import { avatarBackground, initials } from "@/lib/format";
+import { avatarColors, initials } from "@/lib/format";
 
 type AvatarProps = {
   name: string;
@@ -28,7 +29,8 @@ export function Avatar({
   online = false,
   className = "",
 }: AvatarProps) {
-  const fontSize = Math.round(size * 0.38);
+  const fontSize = Math.round(size * 0.42);
+  const colors = avatarColors(colorKey);
   const dot = Math.max(10, Math.round(size * 0.26));
 
   return (
@@ -47,8 +49,8 @@ export function Avatar({
         />
       ) : (
         <div
-          className="flex size-full select-none items-center justify-center rounded-full font-medium text-white"
-          style={{ background: avatarBackground(colorKey), fontSize }}
+          className="flex size-full select-none items-center justify-center rounded-full font-normal tracking-tight"
+          style={{ background: colors.bg, color: colors.fg, fontSize }}
           aria-hidden
         >
           {initials(name)}
