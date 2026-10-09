@@ -26,6 +26,7 @@ import { useToasts } from "@/components/ui/Toasts";
 import { useChat } from "@/store/chat";
 import { ApiError } from "@/lib/api";
 import { conversationApi, userApi } from "@/lib/endpoints";
+import { phoneMatches } from "@/lib/format";
 import type { Contact, ConversationSummary, UserPrivate, UserPublic } from "@/lib/types";
 
 type View = "main" | "group-pick" | "group-name" | "username" | "phone";
@@ -81,7 +82,7 @@ export function NewChatPane({ user, contacts, groups, onClose, onOpened }: NewCh
         (person) =>
           !needle ||
           person.display_name.toLowerCase().includes(needle) ||
-          person.phone_number.includes(needle) ||
+          phoneMatches(person.phone_number, needle) ||
           (person.username ?? "").toLowerCase().includes(needle),
       )
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
@@ -477,7 +478,7 @@ function FindBy({
       const match = hits.find((person) =>
         kind === "username"
           ? (person.username ?? "").toLowerCase() === raw.toLowerCase()
-          : person.phone_number.replace(/\D/g, "").endsWith(raw.replace(/\D/g, "")),
+          : phoneMatches(person.phone_number, raw),
       );
       if (match) onFound(match);
       else

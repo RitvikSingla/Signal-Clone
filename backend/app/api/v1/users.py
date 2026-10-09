@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from app.core.deps import DbSession, RegisteredUser
 from app.core.security import safety_number
@@ -56,6 +57,17 @@ class SafetyNumberOut(BaseModel):
     is_verified: bool
 
 
+_PHONE_LIKE = re.compile(r"^[\d\s+().-]+$")
+
+
+def _phone_digits(query: str) -> str | None:
+    """The digits of a query that looks like a phone number, else None."""
+    if not _PHONE_LIKE.match(query.strip()):
+        return None
+    digits = re.sub(r"\D", "", query).lstrip("0")
+    return digits if len(digits) >= 3 else None
+
+
 # --- profile ---------------------------------------------------------------
 
 
@@ -85,18 +97,28 @@ async def search_users(
     db: DbSession,
     q: Annotated[str, Query(min_length=2, max_length=40)],
 ) -> list[UserPublic]:
-    """Directory lookup by phone number, username or display name."""
+    """Directory lookup by phone number, username or display name.
+
+    Numbers are stored as "+919812345602" but typed the way people see them
+    ("+91 98123 45602", "98123-45602", "07700 900104"), so a query that looks
+    like a phone number is also compared on digits alone, ignoring a
+    national trunk "0".
+    """
     needle = f"%{q.strip().lstrip('@').lower()}%"
+    matches = [
+        User.phone_number.ilike(needle),
+        User.username.ilike(needle),
+        User.display_name.ilike(needle),
+    ]
+    digits = _phone_digits(q)
+    if digits:
+        matches.append(func.replace(User.phone_number, "+", "").like(f"%{digits}%"))
     rows = await db.scalars(
         select(User)
         .where(
             User.id != user.id,
             User.display_name != "",
-            or_(
-                User.phone_number.ilike(needle),
-                User.username.ilike(needle),
-                User.display_name.ilike(needle),
-            ),
+            or_(*matches),
         )
         .order_by(User.display_name)
         .limit(20)

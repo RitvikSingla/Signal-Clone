@@ -58,6 +58,13 @@ def main() -> None:
         r = c.patch(f"{API}/users/me", json={"avatar_url": ""}, headers=me)
         check("an empty value removes the photo", r.json()["avatar_url"] is None, r.json())
 
+        # --- find by phone number, typed the way people type it -------------
+        for typed in ("+919812345602", "9812345602", "+91 98123 45602", "98123-45602", "(+91) 98123 45602"):
+            hits = c.get(f"{API}/users/search", params={"q": typed}, headers=me).json()
+            check(f"'{typed}' finds Aarav", any(u["id"] == ids["aarav"] for u in hits), hits)
+        hits = c.get(f"{API}/users/search", params={"q": "+1 555 010 9999"}, headers=me).json()
+        check("an unregistered number finds no one", hits == [], hits)
+
         # --- group photo uses the same rule ----------------------------------
         r = c.post(f"{API}/conversations/group", json={"name": "Pics", "avatar_url": "https://evil.example/x.png"}, headers=me)
         check("group photo must be your own upload", r.status_code == 400, r.status_code)

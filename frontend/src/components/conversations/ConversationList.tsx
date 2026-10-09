@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/Icons";
 import { Menu } from "@/components/ui/Menu";
 import { messageApi } from "@/lib/endpoints";
-import { listTimestamp } from "@/lib/format";
+import { listTimestamp, phoneMatches } from "@/lib/format";
 import type { Contact, ConversationSummary, MessageSearchHit, UserPrivate } from "@/lib/types";
 
 type ConversationListProps = {
@@ -90,7 +90,11 @@ export function ConversationList({
     return conversations.filter((c) => {
       if (filter === "unread" && c.unread_count === 0) return false;
       if (!needle) return true;
-      return c.title.toLowerCase().includes(needle);
+      // A direct chat is also found by the other person's number.
+      return (
+        c.title.toLowerCase().includes(needle) ||
+        (c.type === "direct" && c.peer !== null && phoneMatches(c.peer.phone_number, needle))
+      );
     });
   }, [conversations, filter, needle]);
 
@@ -106,7 +110,7 @@ export function ConversationList({
         !withThread.has(c.user.id) &&
         (c.user.display_name.toLowerCase().includes(needle) ||
           (c.user.username ?? "").toLowerCase().includes(needle) ||
-          c.user.phone_number.includes(needle)),
+          phoneMatches(c.user.phone_number, needle)),
     );
   }, [contacts, conversations, needle]);
 

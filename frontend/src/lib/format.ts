@@ -182,3 +182,22 @@ export function durationLabel(seconds: number): string {
   }
   return `${seconds}s`;
 }
+
+/**
+ * Whether a typed phone number matches a stored one. People type numbers
+ * the way they see them ("+91 98123 45602", "98123-45602", "(0)7700 900104"),
+ * but they are stored as "+919812345602", so compare digits only, ignoring
+ * a national trunk "0". Queries with fewer than three digits, or with
+ * letters, never match by number.
+ */
+export function phoneMatches(stored: string, query: string): boolean {
+  const typed = phoneDigits(query);
+  return typed !== null && stored.replace(/\D/g, "").includes(typed);
+}
+
+/** The digits of something that looks like a phone number, or null. */
+export function phoneDigits(query: string): string | null {
+  if (!/^[\d\s+().-]+$/.test(query.trim())) return null;
+  const digits = query.replace(/\D/g, "").replace(/^0+/, "");
+  return digits.length >= 3 ? digits : null;
+}
