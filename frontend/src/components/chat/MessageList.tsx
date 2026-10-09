@@ -18,7 +18,15 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode 
 
 import { MessageBubble, type BubbleActions } from "@/components/chat/MessageBubble";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
-import { PinIcon, ScrollDownIcon } from "@/components/ui/Icons";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  GroupIcon,
+  PinIcon,
+  ScrollDownIcon,
+  TimerIcon,
+} from "@/components/ui/Icons";
+import { systemText } from "@/lib/groups";
 import { useNow } from "@/hooks/useNow";
 import { dayDivider, isSameDay } from "@/lib/format";
 import type { Message } from "@/lib/types";
@@ -35,6 +43,10 @@ type MessageListProps = {
   /** An event to slot into the timeline, such as "You accepted the request". */
   event: { at: string; node: ReactNode } | null;
   highlightId: string | null;
+  /** Group member labels by user id, shown beside sender names. */
+  labels?: Record<string, string>;
+  /** This chat's outgoing bubble colour, when one is set. */
+  outgoingColor?: string;
   unreadFromId: string | null;
   unreadCount: number;
   /** Ids ticked in selection mode; null when not selecting. */
@@ -59,6 +71,8 @@ export function MessageList({
   hero,
   event,
   highlightId,
+  labels,
+  outgoingColor,
   unreadFromId,
   unreadCount,
   selection,
@@ -180,6 +194,22 @@ export function MessageList({
             const eventHere = index === eventIndex && event ? event.node : null;
 
             if (message.type === "system") {
+              // Runs of two or more group updates fold into one line, as
+              // Signal does; the first of the run renders the fold.
+              const run = updateRunAt(messages, index);
+              if (run && run.start !== index) return null;
+              if (run) {
+                return (
+                  <Fragment key={message.id}>
+                    {eventHere}
+                    {needsDivider && <DateDivider iso={message.created_at} />}
+                    <GroupUpdates
+                      messages={messages.slice(run.start, run.end + 1)}
+                      currentUserId={currentUserId}
+                    />
+                  </Fragment>
+                );
+              }
               return (
                 <Fragment key={message.id}>
                   {eventHere}
@@ -195,7 +225,10 @@ export function MessageList({
                       onJumpTo={onJumpTo}
                     />
                   ) : (
-                    <SystemMessage text={message.body ?? ""} />
+                    <SystemMessage
+                      text={systemText(message, currentUserId).text}
+                      timer={message.event === "timer"}
+                    />
                   )}
                 </Fragment>
               );
@@ -234,6 +267,8 @@ export function MessageList({
                   selecting={selection !== null}
                   selected={selection?.includes(message.id) ?? false}
                   onToggleSelected={onToggleSelected}
+                  senderLabel={labels?.[message.sender?.id ?? ""] ?? null}
+                  outgoingColor={outgoingColor}
                   actions={actions}
                 />
               </Fragment>
@@ -311,10 +346,84 @@ function PinnedEvent({
   );
 }
 
-function SystemMessage({ text }: { text: string }) {
+/**
+ * Where a foldable run of group updates covers index, if anywhere. Pinned
+ * events and timer changes stay on their own line, as in Signal.
+ */
+function updateRunAt(messages: Message[], index: number): { start: number; end: number } | null {
+  const foldable = (m: Message | undefined) =>
+    Boolean(m && m.type === "system" && m.event !== "pinned" && m.event !== "timer");
+  if (!foldable(messages[index])) return null;
+  let start = index;
+  while (
+    start > 0 &&
+    foldable(messages[start - 1]) &&
+    isSameDay(messages[start - 1].created_at, messages[index].created_at)
+  )
+    start -= 1;
+  let end = index;
+  while (
+    end < messages.length - 1 &&
+    foldable(messages[end + 1]) &&
+    isSameDay(messages[end + 1].created_at, messages[index].created_at)
+  )
+    end += 1;
+  return end > start ? { start, end } : null;
+}
+
+/** "👥 5 group updates ⌄", expanding to the list with a ⌃ under it. */
+function GroupUpdates({ messages, currentUserId }: { messages: Message[]; currentUserId: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className="my-2.5 flex justify-center">
-      <span className="max-w-[80%] text-center text-[12px] leading-snug text-ink-2">{text}</span>
+    <div className="my-2.5 flex w-full flex-col items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex items-center gap-1 rounded-full bg-surface-chip px-2.5 py-1 text-[12px] font-semibold text-ink hover:brightness-110"
+      >
+        <GroupIcon size={13} />
+        {messages.length} group updates
+        <ChevronDownIcon size={12} className={open ? "rotate-180" : ""} />
+      </button>
+      {open && (
+        <>
+          {messages.map((m) => (
+            <SystemMessage key={m.id} text={systemText(m, currentUserId).text} compact />
+          ))}
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Collapse group updates"
+            className="flex size-6 items-center justify-center rounded-full text-ink-2 hover:bg-surface-hover hover:text-ink"
+          >
+            <ChevronUpIcon size={13} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SystemMessage({
+  text,
+  timer = false,
+  compact = false,
+}: {
+  text: string;
+  timer?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`${compact ? "" : "my-2.5"} flex w-full justify-center`}>
+      <span className="flex max-w-[min(90%,560px)] items-center gap-1.5 text-center text-[12px] leading-snug text-ink">
+        {timer ? (
+          <TimerIcon size={13} className="shrink-0 text-ink-2" />
+        ) : (
+          <GroupIcon size={13} className="shrink-0 text-ink-2" />
+        )}
+        {text}
+      </span>
     </div>
   );
 }

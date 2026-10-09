@@ -56,6 +56,9 @@ export type ConversationSummary = {
   is_archived: boolean;
   is_muted: boolean;
   disappearing_seconds: number;
+  ended_at?: string | null;
+  /** False when the caller has left, the group ended, or only admins send. */
+  can_send?: boolean;
   last_activity_at: string;
 };
 
@@ -65,12 +68,45 @@ export type Member = {
   joined_at: string;
   left_at: string | null;
   is_active: boolean;
+  label?: string | null;
+};
+
+export type Permission = "all" | "admins";
+
+export type GroupPermissions = {
+  add_members: Permission;
+  edit_info: Permission;
+  send_messages: Permission;
+  member_labels: Permission;
+};
+
+export type GroupLink = {
+  enabled: boolean;
+  requires_approval: boolean;
+  /** Admins only. */
+  token: string | null;
+};
+
+export type JoinRequest = { user: UserPublic; created_at: string };
+
+export type JoinPreview = {
+  conversation_id: string;
+  title: string;
+  avatar_url: string | null;
+  avatar_color: string;
+  member_count: number;
+  description: string | null;
+  requires_approval: boolean;
+  status: "member" | "requested" | "none";
 };
 
 export type ConversationDetail = ConversationSummary & {
   description: string | null;
   created_by: string | null;
   members: Member[];
+  permissions?: GroupPermissions | null;
+  group_link?: GroupLink | null;
+  join_requests?: JoinRequest[];
 };
 
 export type Reaction = {

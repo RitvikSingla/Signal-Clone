@@ -71,6 +71,10 @@ type MessageBubbleProps = {
   onToggleSelected?: (message: Message) => void;
   /** Static rendering for the Info screen: no hover actions. */
   readOnly?: boolean;
+  /** The sender's member label in this group, if any. */
+  senderLabel?: string | null;
+  /** This chat's outgoing bubble colour ("visible to only you"). */
+  outgoingColor?: string;
   actions: BubbleActions;
 };
 
@@ -97,6 +101,8 @@ export function MessageBubble({
   selected = false,
   onToggleSelected,
   readOnly = false,
+  senderLabel = null,
+  outgoingColor,
   actions,
 }: MessageBubbleProps) {
   const [barOpen, setBarOpen] = useState(false);
@@ -150,6 +156,9 @@ export function MessageBubble({
       style={{ ["--status-on-fill" as string]: bare ? "var(--surface)" : "var(--bubble-out)" }}
     >
       {pinned && <PinIcon size={11} strokeWidth={2} className="-rotate-45" />}
+      {message.expires_at && (
+        <ExpiryTimer createdAt={message.created_at} expiresAt={message.expires_at} now={now} />
+      )}
       {message.edited_at && <span>Edited</span>}
       {bubbleTime(message.created_at, now)}
       {mine && <StatusIcon status={message.status} size={11} />}
@@ -206,6 +215,11 @@ export function MessageBubble({
           } ${message.reactions.length > 0 ? "mb-3.5" : ""} ${
             highlighted ? "ring-2 ring-[#f5c518] ring-offset-2 ring-offset-surface" : ""
           }`}
+          style={
+            mine && !bare && !visualOnly && outgoingColor
+              ? { background: outgoingColor }
+              : undefined
+          }
         >
           {message.is_forwarded && !deleted && (
             <div
@@ -223,7 +237,14 @@ export function MessageBubble({
               className={`mb-0.5 text-[12.5px] font-semibold ${hasMedia ? "px-2 pt-1" : ""}`}
               style={{ color: `var(--${message.sender.avatar_color.toLowerCase()})` }}
             >
-              {message.sender.display_name}
+              <span className="inline-flex items-center gap-1.5">
+                {message.sender.display_name}
+                {senderLabel && (
+                  <span className="rounded bg-[#1f6f3a] px-1.5 text-[10.5px] font-semibold leading-[16px] text-[#b7f5c6]">
+                    {senderLabel}
+                  </span>
+                )}
+              </span>
             </div>
           )}
 
@@ -542,5 +563,36 @@ function ReactionPills({ reactions, mine }: { reactions: Message["reactions"]; m
         </span>
       ))}
     </div>
+  );
+}
+
+/**
+ * Signal's disappearing-message glyph: a small clock face whose filled
+ * wedge shrinks as the message nears its expiry.
+ */
+function ExpiryTimer({
+  createdAt,
+  expiresAt,
+  now,
+}: {
+  createdAt: string;
+  expiresAt: string;
+  now: number;
+}) {
+  const start = new Date(createdAt).getTime();
+  const end = new Date(expiresAt).getTime();
+  const left = Math.max(0, Math.min(1, (end - now) / Math.max(1, end - start)));
+  const angle = left * 2 * Math.PI;
+  const x = 6 + 4.2 * Math.sin(angle);
+  const y = 6 - 4.2 * Math.cos(angle);
+  const wedge =
+    left >= 0.999
+      ? "M6 1.8a4.2 4.2 0 1 1 0 8.4a4.2 4.2 0 1 1 0-8.4Z"
+      : `M6 6V1.8A4.2 4.2 0 ${left > 0.5 ? 1 : 0} 1 ${x.toFixed(2)} ${y.toFixed(2)}Z`;
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-label="Disappearing message" role="img">
+      <circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" strokeWidth="1.1" />
+      {left > 0 && <path d={wedge} fill="currentColor" />}
+    </svg>
   );
 }

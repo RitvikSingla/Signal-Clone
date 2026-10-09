@@ -28,9 +28,9 @@ someone else is in [`docs/Signal-Clone-Walkthrough.pdf`](docs/Signal-Clone-Walkt
 | 06 | Onboarding polish | Partly done |
 | 07 | Conversation list extras | Partly done |
 | 08 | Chat pane: typing, live receipts | Done |
-| 09 | Group admin UI | Partly done |
+| 09 | Group admin UI | Done: settings page, members, roles, link, labels, permissions, end group |
 | 10 | Settings and placeholders | Done |
-| 11 | Bonus: attachments, disappearing | Partly done: attachments, pin, forward, delete for me; disappearing sweep not started |
+| 11 | Bonus: attachments, disappearing | Done: attachments, pin, forward, delete for me, disappearing messages |
 | 12 | Documentation and deploy | Not started |
 
 Messaging is live: two tabs on different accounts exchange messages, typing
@@ -89,10 +89,12 @@ as a one-tap button and fills the verification code for you.
 python backend/scripts/smoke_test.py          # 44 REST checks
 python backend/scripts/realtime_test.py       # 20 socket checks, two accounts
 python backend/scripts/actions_test.py        # 26 checks: pin, forward, delete for me, search, uploads, FTS integrity
+python backend/scripts/groups_test.py         # 39 checks: group admin, link, permissions, disappearing messages
 node frontend/scripts/two-tab-test.mjs out/   # the live gate, in two real browsers
 node frontend/scripts/video-walkthrough.mjs out/                    # screens from reference video 1
 node frontend/scripts/message-actions-walkthrough.mjs out/ files/   # video 2 + attachments
 node frontend/scripts/media-search-walkthrough.mjs out/ files/      # videos 3 and 4
+node frontend/scripts/groups-walkthrough.mjs out/                   # video 5: groups, disappearing
 node frontend/scripts/screenshots.mjs out/    # captures the UI in Chrome
 ```
 
@@ -137,7 +139,7 @@ update rows rather than racing to insert them.
 
 ## Database schema
 
-Eleven tables. Column-level detail is in the walkthrough PDF.
+Thirteen tables. Column-level detail is in the walkthrough PDF.
 
 | Table | Holds |
 | ----- | ----- |
@@ -152,6 +154,17 @@ Eleven tables. Column-level detail is in the walkthrough PDF.
 | `attachments` | Files and images hung off a message |
 | `auth_sessions` | Refresh token store, makes logout real |
 | `phone_verifications` | The mocked OTP flow, modelled as if it were real |
+| `message_hides` | Delete for me: a message hidden for one person only |
+| `group_join_requests` | People waiting for admin approval after opening a group link |
+
+Groups also carry their link (token, on/off, approval), the four permissions
+("all" or "admins"), and an end time; memberships carry a member label.
+
+**Disappearing messages.** A message sent while a thread has a timer gets an
+`expires_at`. A background task in the API process deletes expired rows
+every two seconds (receipts, reactions and attachments go with them through
+`ON DELETE CASCADE`, unshared files are removed from disk) and sends a
+`message.expired` frame so open threads drop them live.
 
 Three decisions drive the shape:
 
@@ -201,6 +214,8 @@ generated from the same Pydantic models the handlers use.
 | Contacts | list, add, update, delete |
 | Conversations | list, create direct, create group, detail, update, prefs, read |
 | Membership | add, change role, remove, leave |
+| Group settings | permissions, link (on/off, approval, reset), member label, join requests, end, clear |
+| Group link | preview and join by token |
 | Messages | list (cursor paged), send, edit, delete, react, search |
 
 ### Notable behaviours

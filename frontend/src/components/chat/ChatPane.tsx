@@ -9,7 +9,7 @@
  * for files dragged onto the conversation.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useNow } from "@/hooks/useNow";
 
@@ -18,6 +18,9 @@ import { CallLobby } from "@/components/chat/CallLobby";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { Composer, type ComposerHandle } from "@/components/chat/Composer";
 import { ConversationHero } from "@/components/chat/ConversationHero";
+import { GroupDetails } from "@/components/chat/GroupDetails";
+import { MuteUntilDialog } from "@/components/chat/MuteMenu";
+import { CustomTimerDialog } from "@/components/chat/TimerSelect";
 import { MessageBubble, type BubbleActions } from "@/components/chat/MessageBubble";
 import { DeleteDialog, ForwardDialog, PinDialog } from "@/components/chat/MessageDialogs";
 import { MessageInfoView } from "@/components/chat/MessageInfoView";
@@ -25,8 +28,18 @@ import { MessageList } from "@/components/chat/MessageList";
 import { AcceptedNotice, MessageRequestBar } from "@/components/chat/MessageRequest";
 import { PinnedBar } from "@/components/chat/PinnedBar";
 import { CloseIcon, ForwardIcon, SignalMark, TrashIcon } from "@/components/ui/Icons";
+import { ConfirmDialog, Modal } from "@/components/ui/Modal";
+import { conversationApi, mediaUrl } from "@/lib/endpoints";
 import { requestMedia } from "@/lib/media";
-import type { Attachment, ConversationDetail, ConversationSummary, Message } from "@/lib/types";
+import type {
+  Attachment,
+  Contact,
+  ConversationDetail,
+  ConversationSummary,
+  Message,
+} from "@/lib/types";
+import { useChat } from "@/store/chat";
+import { useUi } from "@/store/ui";
 
 type ChatPaneProps = {
   conversation: ConversationDetail | null;
@@ -65,6 +78,13 @@ type ChatPaneProps = {
   onWhatsNew: () => void;
   /** Header search: scope the chat list's search to this conversation. */
   onSearchInChat: () => void;
+  contacts: Contact[];
+  onMute: (until: string | null) => void;
+  onMarkUnread: () => void;
+  onBlockChat: () => void;
+  onDeleteChat: () => Promise<void>;
+  onLeftGroup: () => void;
+  onMessageUser: (userId: string) => void;
   /** Set by a search hit: scroll to this message (paging back if needed). */
   jumpRequest: { messageId: string; nonce: number } | null;
   onLoadUntil: (messageId: string) => Promise<boolean>;
@@ -102,6 +122,14 @@ export function ChatPane(props: ChatPaneProps) {
   const [jumpId, setJumpId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [call, setCall] = useState<{ kind: "video" | "voice"; stream: MediaStream } | null>(null);
+  const [view, setView] = useState<"thread" | "details">("thread");
+  const [menuDialog, setMenuDialog] = useState<
+    null | "custom-timer" | "mute-until" | "all-media" | "delete-chat" | "leave" | "block"
+  >(null);
+  const chatColor = useUi((state) =>
+    conversation ? state.chatColors[conversation.id] : undefined,
+  );
+  const removeMessages = useChat((state) => state.removeMessages);
   const composer = useRef<ComposerHandle | null>(null);
   const now = useNow();
   const { jumpRequest, onLoadUntil } = props;
@@ -121,7 +149,60 @@ export function ChatPane(props: ChatPaneProps) {
     };
   }, [jumpRequest, onLoadUntil]);
 
+  // Disappearing messages leave the screen the moment they expire; the
+  // server's sweep (and its socket frame) follows within a couple of seconds.
+  const conversationId = conversation?.id;
+  useEffect(() => {
+    if (!conversationId) return;
+    const pending = messages
+      .filter((m) => m.expires_at)
+      .map((m) => ({ id: m.id, at: new Date(m.expires_at as string).getTime() }));
+    if (!pending.length) return;
+    const next = Math.min(...pending.map((p) => p.at));
+    const timer = setTimeout(
+      () => {
+        const due = pending.filter((p) => p.at <= Date.now() + 250).map((p) => p.id);
+        if (due.length) removeMessages(conversationId, due);
+      },
+      Math.max(0, next - Date.now()) + 50,
+    );
+    return () => clearTimeout(timer);
+  }, [messages, conversationId, removeMessages]);
+
+  const labels = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const member of conversation?.members ?? []) {
+      if (member.label) map[member.user.id] = member.label;
+    }
+    return map;
+  }, [conversation?.members]);
+
   if (!conversation) return <EmptyPane onWhatsNew={props.onWhatsNew} />;
+
+  const isGroup = conversation.type === "group";
+  const openInfo = () => (isGroup ? setView("details") : props.onOpenInfo());
+
+  if (view === "details" && isGroup) {
+    return (
+      <GroupDetails
+        conversation={conversation}
+        currentUserId={currentUserId}
+        contacts={props.contacts}
+        onBack={() => setView("thread")}
+        onCall={(kind) => void startCall(kind)}
+        onSearch={() => {
+          setView("thread");
+          props.onSearchInChat();
+        }}
+        onMessage={props.onMessageUser}
+        onMute={props.onMute}
+        onLeft={() => {
+          setView("thread");
+          props.onLeftGroup();
+        }}
+      />
+    );
+  }
 
   const highlightId = jumpId;
   const byId = (id: string) => messages.find((m) => m.id === id);
@@ -227,11 +308,20 @@ export function ChatPane(props: ChatPaneProps) {
         isRequest={isRequest}
         onSearch={props.onSearchInChat}
         onBack={props.onBack}
-        onOpenInfo={props.onOpenInfo}
+        onOpenInfo={openInfo}
         onCall={(kind) => void startCall(kind)}
         onTogglePin={props.onTogglePin}
         onArchive={props.onArchive}
         onDisappearing={props.onDisappearing}
+        onCustomTimer={() => setMenuDialog("custom-timer")}
+        onMute={props.onMute}
+        onMuteUntil={() => setMenuDialog("mute-until")}
+        onAllMedia={() => setMenuDialog("all-media")}
+        onSelectMessages={() => setSelection([])}
+        onMarkUnread={props.onMarkUnread}
+        onBlock={() => setMenuDialog("block")}
+        onDelete={() => setMenuDialog("delete-chat")}
+        onLeave={() => setMenuDialog("leave")}
       />
 
       <PinnedBar
@@ -255,6 +345,8 @@ export function ChatPane(props: ChatPaneProps) {
           loading={loading}
           typingPeople={typingPeople}
           highlightId={highlightId}
+          labels={labels}
+          outgoingColor={chatColor}
           unreadFromId={props.unreadFromId}
           unreadCount={props.unreadCount}
           selection={selection}
@@ -269,10 +361,11 @@ export function ChatPane(props: ChatPaneProps) {
           hero={
             <ConversationHero
               conversation={conversation}
+              currentUserId={currentUserId}
               verified={verified}
               commonGroups={commonGroups}
               showSafetyTips={isRequest}
-              onOpenInfo={props.onOpenInfo}
+              onOpenInfo={openInfo}
               onSafetyTips={props.onSafetyTips}
             />
           }
@@ -311,6 +404,8 @@ export function ChatPane(props: ChatPaneProps) {
           }
           onDelete={() => selection.length && setDialog({ kind: "delete", ids: selection })}
         />
+      ) : conversation.can_send === false ? (
+        <CannotSendBar conversation={conversation} currentUserId={currentUserId} />
       ) : isRequest ? (
         <MessageRequestBar
           name={conversation.title}
@@ -394,6 +489,70 @@ export function ChatPane(props: ChatPaneProps) {
         />
       )}
 
+      {menuDialog === "custom-timer" && (
+        <CustomTimerDialog
+          onClose={() => setMenuDialog(null)}
+          onSave={(seconds) => {
+            props.onDisappearing(seconds);
+            setMenuDialog(null);
+          }}
+        />
+      )}
+      {menuDialog === "mute-until" && (
+        <MuteUntilDialog
+          onClose={() => setMenuDialog(null)}
+          onMute={(until) => props.onMute(until)}
+        />
+      )}
+      {menuDialog === "all-media" && (
+        <AllMediaDialog
+          messages={messages}
+          onClose={() => setMenuDialog(null)}
+          onOpen={(message, index) => {
+            setMenuDialog(null);
+            setLightbox({ message, index });
+          }}
+        />
+      )}
+      {menuDialog === "delete-chat" && (
+        <ConfirmDialog
+          title="Delete chat?"
+          confirmLabel="Delete"
+          tone="danger"
+          onClose={() => setMenuDialog(null)}
+          onConfirm={() => void props.onDeleteChat()}
+        >
+          This chat will be deleted from this device. Other people in it keep their messages.
+        </ConfirmDialog>
+      )}
+      {menuDialog === "leave" && (
+        <ConfirmDialog
+          title="Leave group?"
+          confirmLabel="Leave"
+          tone="danger"
+          onClose={() => setMenuDialog(null)}
+          onConfirm={() =>
+            void conversationApi
+              .leave(conversation.id)
+              .then(props.onLeftGroup)
+              .catch(() => props.onComingSoon("Leaving groups offline"))
+          }
+        >
+          You will no longer be able to send or receive messages in this group.
+        </ConfirmDialog>
+      )}
+      {menuDialog === "block" && (
+        <ConfirmDialog
+          title={`Block ${conversation.title}?`}
+          confirmLabel="Block"
+          tone="danger"
+          onClose={() => setMenuDialog(null)}
+          onConfirm={props.onBlockChat}
+        >
+          Blocked people won&rsquo;t be able to call you or send you messages.
+        </ConfirmDialog>
+      )}
+
       {call && (
         <CallLobby
           conversation={conversation}
@@ -403,6 +562,71 @@ export function ChatPane(props: ChatPaneProps) {
         />
       )}
     </section>
+  );
+}
+
+/** Stands in for the composer when this person may not send here. */
+function CannotSendBar({
+  conversation,
+  currentUserId,
+}: {
+  conversation: ConversationDetail;
+  currentUserId: string;
+}) {
+  const member = conversation.members.find((m) => m.user.id === currentUserId);
+  const text = conversation.ended_at
+    ? "This group has ended. You can no longer send messages to it."
+    : member && !member.is_active
+      ? "You can't send messages to this group because you're no longer a member."
+      : "Only admins can send messages.";
+  return <div className="shrink-0 px-6 pb-4 pt-2 text-center text-[12.5px] text-ink-2">{text}</div>;
+}
+
+/** "All media": the photos and videos in what is loaded of this thread. */
+function AllMediaDialog({
+  messages,
+  onClose,
+  onOpen,
+}: {
+  messages: Message[];
+  onClose: () => void;
+  onOpen: (message: Message, index: number) => void;
+}) {
+  const items = messages.flatMap((message) =>
+    message.attachments
+      .filter((a) => isImage(a) || isVideo(a))
+      .map((attachment, index) => ({ message, attachment, index })),
+  );
+  return (
+    <Modal onClose={onClose} label="All media" width={520} closeButton>
+      <h2 className="text-[15px] font-semibold text-ink">All media</h2>
+      {items.length === 0 ? (
+        <p className="py-10 text-center text-[13px] text-ink-2">No media in this chat yet.</p>
+      ) : (
+        <div className="mt-4 grid grid-cols-4 gap-1">
+          {items.map(({ message, attachment, index }) => (
+            <button
+              key={attachment.id}
+              type="button"
+              onClick={() => onOpen(message, index)}
+              className="aspect-square overflow-hidden rounded-md bg-surface-sunken"
+              aria-label={`Open ${attachment.file_name}`}
+            >
+              {isVideo(attachment) ? (
+                <video src={mediaUrl(attachment.url)} muted className="size-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={mediaUrl(attachment.thumbnail_url ?? attachment.url)}
+                  alt=""
+                  className="size-full object-cover"
+                />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </Modal>
   );
 }
 

@@ -21,6 +21,7 @@ import { AppDialogs } from "@/components/shell/AppDialogs";
 import { CallsPane } from "@/components/shell/CallsPane";
 import { MenuBar, toggleFullScreen } from "@/components/shell/MenuBar";
 import { NavRail, type RailTab } from "@/components/shell/NavRail";
+import { JoinGroupDialog } from "@/components/shell/JoinGroupDialog";
 import { NewChatPane } from "@/components/shell/NewChatPane";
 import { SettingsPane, type SectionId } from "@/components/shell/SettingsPane";
 import { ONBOARDING_STORY_ID, StoriesPane } from "@/components/shell/StoriesPane";
@@ -98,6 +99,11 @@ export function SignalApp({ user }: { user: UserPrivate }) {
   // Chat-scoped search (the header's magnifier) and the hit to scroll to.
   const [searchScopeId, setSearchScopeId] = useState<string | null>(null);
   const [jumpRequest, setJumpRequest] = useState<{ messageId: string; nonce: number } | null>(null);
+  // A group link opened in this browser: "?join=<token>".
+  const [joinToken, setJoinToken] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("join"),
+  );
+  const setMarkedUnread = useUi((state) => state.setMarkedUnread);
 
   useEffect(() => {
     void loadConversations().then(() => void loadGroupMembers());
@@ -123,12 +129,16 @@ export function SignalApp({ user }: { user: UserPrivate }) {
       if (acceptedRequests[`${user.id}:${conversation.id}`]) return false;
       const thread = threads[conversation.id];
       if (thread && thread.messages.length > 0) {
+        // Only real messages count: a timer change also carries a sender.
+        const real = thread.messages.filter((m) => m.type !== "system");
         return (
-          thread.messages.some((m) => m.sender?.id === peerId) &&
-          !thread.messages.some((m) => m.sender?.id === user.id)
+          real.some((m) => m.sender?.id === peerId) && !real.some((m) => m.sender?.id === user.id)
         );
       }
-      return conversation.last_message?.sender_id === peerId;
+      return (
+        conversation.last_message?.type !== "system" &&
+        conversation.last_message?.sender_id === peerId
+      );
     },
     [contactsLoaded, contactIds, acceptedRequests, threads, user.id],
   );
@@ -197,13 +207,47 @@ export function SignalApp({ user }: { user: UserPrivate }) {
       setInfoOpen(false);
       const summary = conversations.find((c) => c.id === id) ?? archived.find((c) => c.id === id);
       setJumpRequest(null);
+      setMarkedUnread(id, false);
       return openConversation(id, {
         markRead: summary ? !isRequest(summary) : true,
         currentUserId: user.id,
       });
     },
-    [openConversation, conversations, archived, isRequest, user.id],
+    [openConversation, conversations, archived, isRequest, user.id, setMarkedUnread],
   );
+
+  async function muteActive(until: string | null) {
+    if (!activeId) return;
+    try {
+      const summary = await conversationApi.setPrefs(activeId, { muted_until: until });
+      useChat.getState().applyConversation(summary);
+      push(until ? "Notifications muted" : "Notifications unmuted");
+    } catch {
+      push("Could not change notifications.");
+    }
+  }
+
+  async function deleteActiveChat() {
+    if (!activeId) return;
+    const id = activeId;
+    try {
+      await conversationApi.clear(id);
+      await setArchived(id, true);
+      useChat.setState((state) => {
+        const threads = { ...state.threads };
+        delete threads[id];
+        return { threads };
+      });
+      push("Chat deleted");
+    } catch {
+      push("Could not delete the chat.");
+    }
+  }
+
+  function afterLeaving() {
+    void loadConversations();
+    if (activeId) void useChat.getState().refreshDetail(activeId);
+  }
 
   const comingSoon = useCallback(
     (feature: string) => push(`${feature} are a placeholder in this build.`),
@@ -400,6 +444,7 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 <NewChatPane
                   user={user}
                   contacts={contacts}
+                  groups={conversations.filter((c) => c.type === "group")}
                   onClose={() => setChatsView("list")}
                   onOpened={(id) => openChat(id)}
                 />
@@ -545,6 +590,17 @@ export function SignalApp({ user }: { user: UserPrivate }) {
                 unreadFromId={thread?.unreadFromId ?? null}
                 unreadCount={thread?.unreadCount ?? 0}
                 onWhatsNew={() => openDialog("whats-new")}
+                contacts={contacts}
+                onMute={(until) => void muteActive(until)}
+                onMarkUnread={() => {
+                  if (!activeId) return;
+                  setMarkedUnread(activeId, true);
+                  closeConversation();
+                }}
+                onBlockChat={() => void handleBlock()}
+                onDeleteChat={deleteActiveChat}
+                onLeftGroup={afterLeaving}
+                onMessageUser={(userId) => void startChatWith(userId)}
               />
             </div>
 
@@ -584,6 +640,21 @@ export function SignalApp({ user }: { user: UserPrivate }) {
       )}
 
       <AppDialogs socketStatus={socketStatus} />
+
+      {joinToken && (
+        <JoinGroupDialog
+          token={joinToken}
+          onClose={() => {
+            setJoinToken(null);
+            const url = new URL(window.location.href);
+            url.searchParams.delete("join");
+            window.history.replaceState(null, "", url.toString());
+          }}
+          onOpen={(id) => {
+            void loadConversations().then(() => openChat(id));
+          }}
+        />
+      )}
     </div>
   );
 }

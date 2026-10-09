@@ -80,6 +80,10 @@ export function useSocket(enabled: boolean) {
         store.applyConversation(frame.conversation as ConversationSummary);
         break;
 
+      case "message.expired":
+        store.removeMessages(frame.conversation_id, frame.message_ids);
+        break;
+
       default:
         break;
     }

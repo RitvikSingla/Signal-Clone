@@ -31,6 +31,8 @@ class ServerEvent(StrEnum):
     MESSAGE_UPDATED = "message.updated"
     #: A sender's own bubble moved between sent, delivered and read.
     MESSAGE_STATUS = "message.status"
+    #: Disappearing messages whose timer ran out; clients drop them.
+    MESSAGE_EXPIRED = "message.expired"
 
     TYPING = "typing"
     PRESENCE = "presence"

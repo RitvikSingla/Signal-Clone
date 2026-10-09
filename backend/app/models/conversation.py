@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -89,6 +90,37 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UtcDateTime, default=utcnow, nullable=False
     )
 
+    # --- group settings (ignored for direct threads) -----------------------
+
+    #: Random, unguessable token behind the group link. Kept when the link is
+    #: switched off so switching it back on restores the same link; replaced
+    #: only by "Reset link".
+    link_token: Mapped[str | None] = mapped_column(String(43), unique=True)
+    link_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False
+    )
+    #: Joining through the link creates a request an admin must approve.
+    link_requires_approval: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("0"), nullable=False
+    )
+
+    #: Signal's four permissions, each "all" (every member) or "admins".
+    perm_add_members: Mapped[str] = mapped_column(
+        String(6), default="all", server_default="all", nullable=False
+    )
+    perm_edit_info: Mapped[str] = mapped_column(
+        String(6), default="all", server_default="all", nullable=False
+    )
+    perm_send_messages: Mapped[str] = mapped_column(
+        String(6), default="all", server_default="all", nullable=False
+    )
+    perm_member_labels: Mapped[str] = mapped_column(
+        String(6), default="all", server_default="all", nullable=False
+    )
+
+    #: Set by "End group". The thread stays readable but takes no new messages.
+    ended_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
     members: Mapped[list[ConversationMember]] = relationship(
         back_populates="conversation", cascade="all, delete-orphan"
     )
@@ -107,6 +139,31 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<Conversation {self.type} {self.name or self.dm_key}>"
+
+
+class GroupJoinRequest(UUIDPrimaryKeyMixin, Base):
+    """Someone asked to join through a group link that needs admin approval.
+
+    One open request per person per group; approving or denying deletes the
+    row, so the table only ever holds what is waiting.
+    """
+
+    __tablename__ = "group_join_requests"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "user_id", name="uq_group_join_requests_pair"),
+    )
+
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, default=utcnow, nullable=False
+    )
+
+    user: Mapped[User] = relationship()
 
 
 class ConversationMember(UUIDPrimaryKeyMixin, Base):
@@ -146,6 +203,9 @@ class ConversationMember(UUIDPrimaryKeyMixin, Base):
     )
 
     muted_until: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    #: A short label this member chose for themselves, shown beside their
+    #: name inside this group only.
+    label: Mapped[str | None] = mapped_column(String(24))
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

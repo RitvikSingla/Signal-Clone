@@ -12,10 +12,12 @@
 
 import { Avatar } from "@/components/ui/Avatar";
 import { ChevronRightIcon, GroupIcon, PersonQuestionIcon } from "@/components/ui/Icons";
+import { membersLine } from "@/lib/groups";
 import type { ConversationDetail } from "@/lib/types";
 
 type ConversationHeroProps = {
   conversation: ConversationDetail;
+  currentUserId: string;
   verified: boolean;
   commonGroups: string[];
   showSafetyTips: boolean;
@@ -25,6 +27,7 @@ type ConversationHeroProps = {
 
 export function ConversationHero({
   conversation,
+  currentUserId,
   verified,
   commonGroups,
   showSafetyTips,
@@ -42,6 +45,7 @@ export function ConversationHero({
           colorKey={conversation.avatar_color}
           url={conversation.avatar_url}
           size={52}
+          group={conversation.type === "group"}
         />
 
         <button
@@ -61,9 +65,9 @@ export function ConversationHero({
         )}
 
         {isGroup ? (
-          <p className="mt-2 text-[12px] text-ink-2">
-            {activeMembers} {activeMembers === 1 ? "member" : "members"}
-            {conversation.description ? ` · ${conversation.description}` : ""}
+          <p className="mt-2 flex items-center gap-1 text-[12px] font-medium text-ink" title={`${activeMembers} members`}>
+            <GroupIcon size={13} className="shrink-0" />
+            {membersLine(conversation, currentUserId)}
           </p>
         ) : (
           <p className="mt-2 flex items-center gap-1 text-[12px] font-medium text-ink">

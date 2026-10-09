@@ -37,6 +37,7 @@ export type ServerFrame =
     }
   | { type: "presence"; user_id: string; is_online: boolean; last_seen_at: string }
   | { type: "conversation.updated"; conversation: unknown }
+  | { type: "message.expired"; conversation_id: string; message_ids: string[] }
   | { type: "error"; detail: string };
 
 export type SocketStatus = "connecting" | "open" | "closed";

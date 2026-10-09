@@ -16,9 +16,15 @@ from app.schemas.conversation import (
     ConversationSummary,
     CreateDirectIn,
     CreateGroupIn,
+    JoinPreviewOut,
+    JoinResultOut,
     MarkReadIn,
     MarkReadOut,
+    ResolveRequestIn,
+    SetLabelIn,
     UpdateConversationIn,
+    UpdateGroupLinkIn,
+    UpdatePermissionsIn,
     UpdatePrefsIn,
 )
 from app.schemas.message import MessageOut, MessagePage, SendMessageIn
@@ -67,11 +73,44 @@ async def create_group(
     payload: CreateGroupIn, user: RegisteredUser, db: DbSession
 ) -> ConversationDetail:
     try:
-        return await conversation_service.create_group(
-            db, user, payload.name, payload.member_ids, payload.description
+        detail = await conversation_service.create_group(
+            db,
+            user,
+            payload.name,
+            payload.member_ids,
+            payload.description,
+            avatar_url=payload.avatar_url,
+            disappearing_seconds=payload.disappearing_seconds,
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    db.info.pop("system_messages", None)  # nobody has the thread open yet
+    await broadcast.conversation_updated(db, detail.id)
+    return detail
+
+
+# --- group link (declared before /{conversation_id} routes) -----------------
+
+
+@router.get("/group-link/{token}", response_model=JoinPreviewOut)
+async def preview_group_link(token: str, user: RegisteredUser, db: DbSession) -> JoinPreviewOut:
+    """What the group looks like to someone holding its link."""
+    try:
+        return await conversation_service.preview_join(db, user, token)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+
+
+@router.post("/group-link/{token}", response_model=JoinResultOut)
+async def join_group_link(token: str, user: RegisteredUser, db: DbSession) -> JoinResultOut:
+    """Join, or ask to join when the link requires admin approval."""
+    try:
+        conversation_id, result = await conversation_service.join_by_link(db, user, token)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id)
+    await broadcast.conversation_updated(db, conversation_id)
+    return JoinResultOut(conversation_id=conversation_id, status=result)
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
@@ -100,9 +139,11 @@ async def update_conversation(
             description=payload.description,
             avatar_color=payload.avatar_color,
             disappearing_seconds=payload.disappearing_seconds,
+            avatar_url=payload.avatar_url,
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id)
     await broadcast.conversation_updated(db, conversation_id)
     return detail
 
@@ -120,6 +161,7 @@ async def update_prefs(
             is_pinned=payload.is_pinned,
             is_archived=payload.is_archived,
             muted_until=payload.muted_until,
+            set_mute="muted_until" in payload.model_fields_set,
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
@@ -160,6 +202,7 @@ async def add_members(
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id)
     await broadcast.conversation_updated(db, conversation_id)
     return detail
 
@@ -179,6 +222,7 @@ async def change_role(
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id)
     await broadcast.conversation_updated(db, conversation_id)
     return detail
 
@@ -194,6 +238,8 @@ async def remove_member(
         )
     except ConversationError as exc:
         raise _fail(exc) from exc
+    # The removed person hears about it too, so their thread updates.
+    await broadcast.system_messages(db, conversation_id, also_notify=[member_id])
     await broadcast.conversation_updated(db, conversation_id)
     return detail
 
@@ -204,7 +250,110 @@ async def leave(conversation_id: str, user: RegisteredUser, db: DbSession) -> Me
         await conversation_service.leave(db, user, conversation_id)
     except ConversationError as exc:
         raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id, also_notify=[user.id])
+    await broadcast.conversation_updated(db, conversation_id)
     return MessageAck(detail="You left the group.")
+
+
+# --- group settings ----------------------------------------------------------
+
+
+@router.patch("/{conversation_id}/permissions", response_model=ConversationDetail)
+async def update_permissions(
+    conversation_id: str, payload: UpdatePermissionsIn, user: RegisteredUser, db: DbSession
+) -> ConversationDetail:
+    """Admin only. Each permission is "all" or "admins"."""
+    try:
+        detail = await conversation_service.update_permissions(
+            db, user, conversation_id, payload.model_dump(exclude_none=True)
+        )
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id)
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
+
+
+@router.patch("/{conversation_id}/link", response_model=ConversationDetail)
+async def update_group_link(
+    conversation_id: str, payload: UpdateGroupLinkIn, user: RegisteredUser, db: DbSession
+) -> ConversationDetail:
+    """Admin only: turn the link on or off, require approval, or reset it."""
+    try:
+        detail = await conversation_service.update_group_link(
+            db,
+            user,
+            conversation_id,
+            enabled=payload.enabled,
+            requires_approval=payload.requires_approval,
+            reset=payload.reset,
+        )
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id)
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
+
+
+@router.put("/{conversation_id}/label", response_model=ConversationDetail)
+async def set_label(
+    conversation_id: str, payload: SetLabelIn, user: RegisteredUser, db: DbSession
+) -> ConversationDetail:
+    """The caller's own member label in this group."""
+    try:
+        detail = await conversation_service.set_label(db, user, conversation_id, payload.label)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
+
+
+@router.post("/{conversation_id}/requests/{requester_id}", response_model=ConversationDetail)
+async def resolve_request(
+    conversation_id: str,
+    requester_id: str,
+    payload: ResolveRequestIn,
+    user: RegisteredUser,
+    db: DbSession,
+) -> ConversationDetail:
+    """Admin only: approve or deny someone who asked to join via the link."""
+    try:
+        detail = await conversation_service.resolve_request(
+            db, user, conversation_id, requester_id, payload.approve
+        )
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    await broadcast.system_messages(
+        db, conversation_id, also_notify=[requester_id] if not payload.approve else None
+    )
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
+
+
+@router.post("/{conversation_id}/end", response_model=ConversationDetail)
+async def end_group(
+    conversation_id: str, user: RegisteredUser, db: DbSession
+) -> ConversationDetail:
+    """Admin only. Nobody can send to the group afterwards; history stays."""
+    try:
+        detail = await conversation_service.end_group(db, user, conversation_id)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    await broadcast.system_messages(db, conversation_id)
+    await broadcast.conversation_updated(db, conversation_id)
+    return detail
+
+
+@router.post("/{conversation_id}/clear", response_model=MessageAck)
+async def clear_history(
+    conversation_id: str, user: RegisteredUser, db: DbSession
+) -> MessageAck:
+    """Delete the chat for the caller only: every message is hidden for them."""
+    try:
+        count = await conversation_service.clear_history(db, user, conversation_id)
+    except ConversationError as exc:
+        raise _fail(exc) from exc
+    return MessageAck(detail=f"Deleted {count} messages for you.")
 
 
 # --- messages within a conversation ---------------------------------------

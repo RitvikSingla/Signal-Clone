@@ -7,11 +7,16 @@
  * Find by username, Find by phone number), then the Contacts list ending in
  * Note to Self.
  *
- * The shortcuts are sub-views of the same pane: picking group members and
- * naming the group, and the two lookups.
+ * The shortcuts are sub-views of the same pane. New group is two steps, as
+ * in the recording: "Choose members" (chips above the list, round ticks,
+ * Skip or Next at the bottom right), then "Name this group" (photo, a
+ * required name, the disappearing-messages timer, the member list, Create).
+ * Your groups are listed under the contacts.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+import { TimerSelect } from "@/components/chat/TimerSelect";
 
 import { PaneHeader, PaneSearch, SidePane } from "@/components/shell/SidePane";
 import { Avatar } from "@/components/ui/Avatar";
@@ -20,24 +25,25 @@ import {
   CloseIcon,
   GroupIcon,
   HashIcon,
-  SendIcon,
+  PhotoIcon,
   VerifiedIcon,
 } from "@/components/ui/Icons";
 import { useToasts } from "@/components/ui/Toasts";
 import { ApiError } from "@/lib/api";
-import { conversationApi, userApi } from "@/lib/endpoints";
-import type { Contact, UserPrivate, UserPublic } from "@/lib/types";
+import { conversationApi, mediaUrl, uploadAttachment, userApi } from "@/lib/endpoints";
+import type { Contact, ConversationSummary, UserPrivate, UserPublic } from "@/lib/types";
 
 type View = "main" | "group-pick" | "group-name" | "username" | "phone";
 
 type NewChatPaneProps = {
   user: UserPrivate;
   contacts: Contact[];
+  groups: ConversationSummary[];
   onClose: () => void;
   onOpened: (conversationId: string) => void;
 };
 
-export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPaneProps) {
+export function NewChatPane({ user, contacts, groups, onClose, onOpened }: NewChatPaneProps) {
   const push = useToasts((state) => state.push);
 
   const [view, setView] = useState<View>("main");
@@ -45,6 +51,8 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
   const [results, setResults] = useState<UserPublic[]>([]);
   const [selected, setSelected] = useState<UserPublic[]>([]);
   const [groupName, setGroupName] = useState("");
+  const [groupPhoto, setGroupPhoto] = useState<string | null>(null);
+  const [groupTimer, setGroupTimer] = useState(0);
   const [busy, setBusy] = useState(false);
 
   // Directory lookup, so someone not yet in the address book is reachable.
@@ -96,12 +104,19 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
     }
   }
 
+  const visibleGroups = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return groups.filter((g) => !needle || g.title.toLowerCase().includes(needle));
+  }, [groups, query]);
+
   async function createGroup() {
     setBusy(true);
     try {
       const conversation = await conversationApi.createGroup({
         name: groupName.trim(),
         member_ids: selected.map((p) => p.id),
+        avatar_url: groupPhoto,
+        disappearing_seconds: groupTimer,
       });
       onOpened(conversation.id);
     } catch (error) {
@@ -133,36 +148,52 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
     return (
       <SidePane>
         <PaneHeader title="Name this group" onBack={() => setView("group-pick")} />
-        <div className="flex flex-col items-center px-4 pt-4">
-          <span className="flex size-20 items-center justify-center rounded-full bg-surface-sunken text-ink-2">
-            <GroupIcon size={34} strokeWidth={1.4} />
-          </span>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-3">
+          <div className="flex justify-center">
+            <GroupPhotoPicker value={groupPhoto} onChange={setGroupPhoto} />
+          </div>
           <input
             autoFocus
             value={groupName}
+            maxLength={32}
             onChange={(event) => setGroupName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && groupName.trim()) void createGroup();
             }}
             placeholder="Group name (required)"
-            className="mt-5 h-10 w-full rounded-lg bg-surface-sunken px-3 text-[14px] text-ink outline-none placeholder:text-ink-2 focus:ring-2 focus:ring-ultramarine"
+            aria-label="Group name"
+            className="mt-5 h-9 w-full rounded-md border border-ultramarine/70 bg-transparent px-3 text-[13px] text-ink outline-none placeholder:text-ink-2 focus:border-ultramarine focus:ring-1 focus:ring-ultramarine"
           />
-          <p className="mt-4 self-start text-[13px] font-semibold text-ink">Members</p>
-          <div className="mt-2 w-full">
+          <div className="mt-4 flex items-center justify-between">
+            <span className="text-[13px] font-semibold text-ink">Disappearing messages</span>
+            <TimerSelect value={groupTimer} onChange={setGroupTimer} align="right" />
+          </div>
+          <p className="mt-5 text-[13px] font-semibold text-ink">Members</p>
+          <div className="mt-1.5">
+            {selected.length === 0 && (
+              <p className="py-2 text-[12.5px] text-ink-2">Just you for now. Add people later.</p>
+            )}
             {selected.map((person) => (
               <div key={person.id} className="flex items-center gap-3 py-1.5">
-                <Avatar name={person.display_name} colorKey={person.avatar_color} size={32} />
-                <span className="truncate text-[13px] text-ink">{person.display_name}</span>
+                <Avatar
+                  name={person.display_name}
+                  colorKey={person.avatar_color}
+                  url={person.avatar_url}
+                  size={30}
+                />
+                <span className="truncate text-[13px] font-semibold text-ink">
+                  {person.display_name}
+                </span>
               </div>
             ))}
           </div>
         </div>
-        <div className="mt-auto flex justify-end p-4">
+        <div className="flex justify-end p-3">
           <button
             type="button"
             disabled={busy || !groupName.trim()}
             onClick={() => void createGroup()}
-            className="h-9 rounded-full bg-ultramarine px-5 text-[13px] font-semibold text-white transition hover:bg-ultramarine-hover disabled:opacity-50"
+            className="h-8 rounded-md bg-ultramarine px-5 text-[13px] font-semibold text-white transition hover:bg-ultramarine-hover disabled:opacity-50"
           >
             {busy ? "Creating…" : "Create"}
           </button>
@@ -176,7 +207,7 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
   return (
     <SidePane>
       <PaneHeader
-        title={picking ? "Add group members" : "New chat"}
+        title={picking ? "Choose members" : "New chat"}
         onBack={() => {
           if (picking) {
             setView("main");
@@ -194,7 +225,7 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
       />
 
       {picking && selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 px-3 pb-2">
+        <div className="flex max-h-24 flex-wrap gap-1.5 overflow-y-auto px-3 pb-2">
           {selected.map((person) => (
             <button
               key={person.id}
@@ -213,9 +244,21 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
       <div className="min-h-0 flex-1 overflow-y-auto pb-2">
         {!picking && !query && (
           <>
-            <ShortcutRow icon={<GroupIcon size={18} />} label="New group" onClick={() => setView("group-pick")} />
-            <ShortcutRow icon={<AtIcon size={18} />} label="Find by username" onClick={() => setView("username")} />
-            <ShortcutRow icon={<HashIcon size={18} />} label="Find by phone number" onClick={() => setView("phone")} />
+            <ShortcutRow
+              icon={<GroupIcon size={18} />}
+              label="New group"
+              onClick={() => setView("group-pick")}
+            />
+            <ShortcutRow
+              icon={<AtIcon size={18} />}
+              label="Find by username"
+              onClick={() => setView("username")}
+            />
+            <ShortcutRow
+              icon={<HashIcon size={18} />}
+              label="Find by phone number"
+              onClick={() => setView("phone")}
+            />
           </>
         )}
 
@@ -256,7 +299,13 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
                 >
                   {picked && (
                     <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden>
-                      <path d="m2.5 6.2 2.2 2.2 4.8-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                      <path
+                        d="m2.5 6.2 2.2 2.2 4.8-4.8"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                      />
                     </svg>
                   )}
                 </span>
@@ -271,12 +320,47 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
             onClick={() => push("Note to Self is not available in this build.")}
             className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-surface-hover"
           >
-            <Avatar name={user.display_name} colorKey={user.avatar_color} url={user.avatar_url} size={32} />
+            <Avatar
+              name={user.display_name}
+              colorKey={user.avatar_color}
+              url={user.avatar_url}
+              size={32}
+            />
             <span className="flex items-center gap-1 text-[13px] font-semibold text-ink">
               Note to Self
               <VerifiedIcon size={13} />
             </span>
           </button>
+        )}
+
+        {!picking && visibleGroups.length > 0 && (
+          <>
+            <p className="px-5 pb-1 pt-3 text-[13px] font-semibold text-ink">Groups</p>
+            {visibleGroups.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                onClick={() => onOpened(group.id)}
+                className="mx-2 flex w-[calc(100%-1rem)] items-center gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-surface-hover"
+              >
+                <Avatar
+                  name={group.title}
+                  colorKey={group.avatar_color}
+                  url={group.avatar_url}
+                  size={32}
+                  group
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-semibold text-ink">
+                    {group.title}
+                  </span>
+                  <span className="block text-[12px] text-ink-2">
+                    {group.member_count} {group.member_count === 1 ? "member" : "members"}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </>
         )}
       </div>
 
@@ -284,16 +368,72 @@ export function NewChatPane({ user, contacts, onClose, onOpened }: NewChatPanePr
         <div className="flex justify-end p-3">
           <button
             type="button"
-            disabled={selected.length === 0}
             onClick={() => setView("group-name")}
-            aria-label="Next"
-            className="flex size-10 items-center justify-center rounded-full bg-ultramarine text-white transition hover:bg-ultramarine-hover disabled:opacity-40"
+            className="h-8 rounded-md bg-ultramarine px-4 text-[13px] font-semibold text-white transition hover:bg-ultramarine-hover"
           >
-            <SendIcon size={18} />
+            {selected.length ? "Next" : "Skip"}
           </button>
         </div>
       )}
     </SidePane>
+  );
+}
+
+/** The round photo with a camera badge on "Name this group". */
+function GroupPhotoPicker({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (url: string | null) => void;
+}) {
+  const push = useToasts((state) => state.push);
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={() => input.current?.click()}
+      aria-label={value ? "Change group photo" : "Add group photo"}
+      className="relative size-20 rounded-full"
+    >
+      {value ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={mediaUrl(value)} alt="" className="size-full rounded-full object-cover" />
+      ) : (
+        <span className="flex size-full items-center justify-center rounded-full bg-[#e3e3fe] text-[#3838f5]">
+          <GroupIcon size={36} strokeWidth={1.5} />
+        </span>
+      )}
+      <span className="absolute bottom-0 right-0 flex size-6 items-center justify-center rounded-full border-2 border-surface-raised bg-surface-chip text-ink">
+        {busy ? (
+          <span className="size-3 animate-spin rounded-full border-2 border-ink-3 border-t-transparent" />
+        ) : (
+          <PhotoIcon size={12} />
+        )}
+      </span>
+      <input
+        ref={input}
+        type="file"
+        hidden
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (!file) return;
+          setBusy(true);
+          try {
+            const attachment = await uploadAttachment(file, () => undefined);
+            onChange(attachment.thumbnail_url ?? attachment.url);
+          } catch (error) {
+            push(error instanceof ApiError ? error.message : "Could not upload the photo.");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+    </button>
   );
 }
 

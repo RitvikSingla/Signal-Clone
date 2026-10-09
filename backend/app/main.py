@@ -5,6 +5,8 @@ app/services, and the socket hub lives in app/realtime. This module only
 assembles them.
 """
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -16,11 +18,38 @@ from app.core.config import settings
 from app.realtime.router import router as realtime_router
 
 
+log = logging.getLogger("signal.sweeper")
+
+#: How often expired disappearing messages are deleted. The shortest timer
+#: Signal offers is 30 seconds, so a two-second sweep is well inside it.
+SWEEP_SECONDS = 2.0
+
+
+async def sweep_forever() -> None:
+    from app.db.session import AsyncSessionLocal
+    from app.realtime import broadcast
+    from app.services import message_service
+
+    while True:
+        try:
+            async with AsyncSessionLocal() as db:
+                expired = await message_service.sweep_expired(db)
+                if expired:
+                    await broadcast.messages_expired(db, expired)
+        except Exception:  # never let one bad sweep stop the loop
+            log.exception("disappearing-message sweep failed")
+        await asyncio.sleep(SWEEP_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown work."""
+    """Startup and shutdown work: media folder, and the expiry sweeper."""
     settings.media_root.mkdir(parents=True, exist_ok=True)
-    yield
+    sweeper = asyncio.create_task(sweep_forever())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
 
 
 def create_app() -> FastAPI:

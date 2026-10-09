@@ -12,6 +12,7 @@ import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import delete as sql_delete
 from sqlalchemy import exists, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -40,7 +41,11 @@ from app.schemas.message import (
     ReactionOut,
     ReceiptOut,
 )
-from app.services.conversation_service import ConversationError, require_membership
+from app.services.conversation_service import (
+    ConversationError,
+    require_allowed,
+    require_membership,
+)
 
 DEFAULT_PAGE_SIZE = 40
 MAX_PAGE_SIZE = 100
@@ -284,7 +289,7 @@ async def send_message(
     Idempotent on (sender, client_id): a retry after a dropped response
     returns the message that already exists instead of creating a second one.
     """
-    await require_membership(db, user, conversation_id)
+    membership = await require_membership(db, user, conversation_id)
 
     existing = await db.scalar(
         select(Message).where(
@@ -297,6 +302,9 @@ async def send_message(
     conversation = await db.get(Conversation, conversation_id)
     if conversation is None:
         raise ConversationError("Conversation not found.", 404)
+    if conversation.ended_at is not None:
+        raise ConversationError("This group has ended.", 409)
+    require_allowed(conversation, membership, conversation.perm_send_messages, "send messages")
 
     if reply_to_id:
         target = await db.get(Message, reply_to_id)
@@ -807,3 +815,75 @@ async def search_messages(
             )
         )
     return hits
+
+
+# ---------------------------------------------------------------------------
+# Disappearing messages
+# ---------------------------------------------------------------------------
+
+
+async def sweep_expired(db: AsyncSession) -> dict[str, list[str]]:
+    """Delete every message whose timer has run out.
+
+    Returns {conversation_id: [deleted message ids]} so the caller can tell
+    each thread's members. This is a hard delete, not a tombstone: the point
+    of a disappearing message is that nothing of it remains. Receipts,
+    reactions, hides and attachment rows go with it through ON DELETE
+    CASCADE; replies that quoted it keep their own text (SET NULL); the
+    full-text index drops it through its delete trigger. Stored files are
+    removed once no remaining attachment row points at them (a forwarded
+    copy shares the file).
+    """
+    now = _now()
+    expired = (
+        await db.scalars(
+            select(Message)
+            .where(Message.expires_at.is_not(None), Message.expires_at <= now)
+            .options(selectinload(Message.attachments))
+            .limit(500)
+        )
+    ).all()
+    if not expired:
+        return {}
+
+    by_conversation: dict[str, list[str]] = {}
+    paths: set[str] = set()
+    for message in expired:
+        by_conversation.setdefault(message.conversation_id, []).append(message.id)
+        for attachment in message.attachments:
+            paths.add(attachment.storage_path)
+            if attachment.thumbnail_path:
+                paths.add(attachment.thumbnail_path)
+    # One statement, with the database's ON DELETE rules doing the rest
+    # (foreign keys are enforced on every connection; see db/session.py).
+    ids = [m.id for m in expired]
+    await db.execute(sql_delete(Message).where(Message.id.in_(ids)))
+    db.expunge_all()
+
+    # Point each thread's preview at whatever is now its newest message.
+    for conversation_id in by_conversation:
+        conversation = await db.get(Conversation, conversation_id)
+        if conversation is None:
+            continue
+        newest = await db.scalar(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc())
+            .limit(1)
+        )
+        conversation.last_message_id = newest.id if newest else None
+
+    await db.commit()
+
+    for path in paths:
+        still_used = await db.scalar(
+            select(func.count())
+            .select_from(Attachment)
+            .where(
+                (Attachment.storage_path == path) | (Attachment.thumbnail_path == path)
+            )
+        )
+        if not still_used:
+            (settings.media_root / path).unlink(missing_ok=True)
+
+    return by_conversation

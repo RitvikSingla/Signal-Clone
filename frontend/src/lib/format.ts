@@ -161,7 +161,8 @@ export function previewText(
   else if (type === "file") text = body ? `📎 ${body}` : "📎 File";
   else text = body ?? "";
 
-  if (type === "system") return text;
+  // Group updates name their actor: "You created the group."
+  if (type === "system") return senderName ? `${isMine ? "You" : senderName} ${text}` : text;
   // Signal Desktop does not prefix your own messages with "You:".
   if (isGroup && senderName && !isMine) return `${senderName.split(" ")[0]}: ${text}`;
   return text;

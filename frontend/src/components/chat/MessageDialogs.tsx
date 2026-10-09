@@ -231,6 +231,7 @@ export function ForwardDialog({
                 colorKey={conversation.avatar_color}
                 url={conversation.avatar_url}
                 size={30}
+                group={conversation.type === "group"}
               />
               <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
                 {conversation.title}

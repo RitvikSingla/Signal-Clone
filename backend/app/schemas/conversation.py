@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.models.enums import ConversationType, MemberRole
@@ -17,6 +19,7 @@ class MemberOut(BaseModel):
     joined_at: datetime
     left_at: datetime | None
     is_active: bool
+    label: str | None = None
 
 
 class ConversationSummary(BaseModel):
@@ -43,13 +46,43 @@ class ConversationSummary(BaseModel):
     is_archived: bool
     is_muted: bool
     disappearing_seconds: int
+    #: Set once an admin ends the group; the thread then takes no messages.
+    ended_at: datetime | None = None
+    #: Whether the caller may send here (left, ended, or admins-only).
+    can_send: bool = True
     last_activity_at: datetime
+
+
+Permission = Literal["all", "admins"]
+
+
+class GroupPermissions(BaseModel):
+    add_members: Permission = "all"
+    edit_info: Permission = "all"
+    send_messages: Permission = "all"
+    member_labels: Permission = "all"
+
+
+class GroupLinkOut(BaseModel):
+    enabled: bool
+    requires_approval: bool
+    #: Only admins see the token; it is the secret that lets people join.
+    token: str | None
+
+
+class JoinRequestOut(BaseModel):
+    user: UserPublic
+    created_at: datetime
 
 
 class ConversationDetail(ConversationSummary):
     description: str | None
     created_by: str | None
     members: list[MemberOut]
+    permissions: GroupPermissions | None = None
+    group_link: GroupLinkOut | None = None
+    #: Waiting join requests; listed for admins only.
+    join_requests: list[JoinRequestOut] = Field(default_factory=list)
 
 
 class CreateDirectIn(BaseModel):
@@ -58,14 +91,18 @@ class CreateDirectIn(BaseModel):
 
 class CreateGroupIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
-    member_ids: list[str] = Field(min_length=1)
+    #: May be empty: Signal lets you create a group and add people later.
+    member_ids: list[str] = Field(default_factory=list)
     description: str | None = Field(default=None, max_length=255)
+    avatar_url: str | None = Field(default=None, max_length=255)
+    disappearing_seconds: int = Field(default=0, ge=0, le=31_536_000)
 
 
 class UpdateConversationIn(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
     description: str | None = Field(default=None, max_length=255)
     avatar_color: str | None = Field(default=None, max_length=8)
+    avatar_url: str | None = Field(default=None, max_length=255)
     disappearing_seconds: int | None = Field(default=None, ge=0, le=31_536_000)
 
 
@@ -94,3 +131,45 @@ class MarkReadOut(ORMModel):
     conversation_id: str
     unread_count: int
     last_read_message_id: str | None
+
+
+class UpdatePermissionsIn(BaseModel):
+    add_members: Permission | None = None
+    edit_info: Permission | None = None
+    send_messages: Permission | None = None
+    member_labels: Permission | None = None
+
+
+class UpdateGroupLinkIn(BaseModel):
+    enabled: bool | None = None
+    requires_approval: bool | None = None
+    #: Replace the token, invalidating every copy of the old link.
+    reset: bool = False
+
+
+class SetLabelIn(BaseModel):
+    #: Empty or null clears the label.
+    label: str | None = Field(default=None, max_length=24)
+
+
+class JoinPreviewOut(BaseModel):
+    """What someone holding a link sees before joining."""
+
+    conversation_id: str
+    title: str
+    avatar_url: str | None
+    avatar_color: str
+    member_count: int
+    description: str | None
+    requires_approval: bool
+    #: "member" (already in), "requested" (waiting), or "none".
+    status: Literal["member", "requested", "none"]
+
+
+class JoinResultOut(BaseModel):
+    conversation_id: str
+    status: Literal["joined", "requested", "member"]
+
+
+class ResolveRequestIn(BaseModel):
+    approve: bool

@@ -14,6 +14,7 @@
 import { Avatar } from "@/components/ui/Avatar";
 import { MuteIcon, PinIcon, StatusIcon } from "@/components/ui/Icons";
 import { useNow } from "@/hooks/useNow";
+import { useUi } from "@/store/ui";
 import { listTimestamp, previewText } from "@/lib/format";
 import type { ConversationSummary } from "@/lib/types";
 
@@ -39,7 +40,8 @@ export function ConversationRow({
 
   const last = conversation.last_message;
   const mine = last?.sender_id === currentUserId;
-  const unread = conversation.unread_count > 0 && !isRequest;
+  const markedUnread = useUi((state) => state.markedUnread.includes(conversation.id));
+  const unread = (conversation.unread_count > 0 || markedUnread) && !isRequest;
 
   const preview = isRequest
     ? "Message Request"
@@ -72,6 +74,7 @@ export function ConversationRow({
         url={conversation.avatar_url}
         size={42}
         online={conversation.peer?.is_online ?? false}
+        group={conversation.type === "group"}
       />
 
       <div className="min-w-0 flex-1">
@@ -113,7 +116,7 @@ export function ConversationRow({
 
           {unread ? (
             <span className="ml-auto flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-ultramarine px-1.5 text-[11px] font-semibold text-white">
-              {conversation.unread_count}
+              {conversation.unread_count || ""}
             </span>
           ) : (
             mine &&

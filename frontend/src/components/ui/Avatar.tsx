@@ -18,6 +18,8 @@ type AvatarProps = {
   size?: number;
   /** Draws the green presence dot, used in the list and the chat header. */
   online?: boolean;
+  /** A group with no photo shows Signal's people glyph, not initials. */
+  group?: boolean;
   className?: string;
 };
 
@@ -27,6 +29,7 @@ export function Avatar({
   url,
   size = 48,
   online = false,
+  group = false,
   className = "",
 }: AvatarProps) {
   const fontSize = Math.round(size * 0.42);
@@ -53,7 +56,25 @@ export function Avatar({
           style={{ background: colors.bg, color: colors.fg, fontSize }}
           aria-hidden
         >
-          {initials(name)}
+          {group ? (
+            <svg
+              width={size * 0.56}
+              height={size * 0.56}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.6}
+              strokeLinecap="round"
+              aria-hidden
+            >
+              <circle cx="8.5" cy="9" r="3.2" />
+              <path d="M2.5 19a6 6 0 0 1 12 0" />
+              <circle cx="16" cy="9.5" r="2.8" />
+              <path d="M15 14.2a5.2 5.2 0 0 1 6.5 4.8" />
+            </svg>
+          ) : (
+            initials(name)
+          )}
         </div>
       )}
 

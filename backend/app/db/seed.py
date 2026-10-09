@@ -320,6 +320,9 @@ GROUP_THREADS: tuple[dict, ...] = (
         # Priya is the admin here and Ritvik is a plain member, so the
         # permission paths are demonstrable from the demo account.
         "admin": "priya",
+        # Only admins may add people here, so the server's refusal of a
+        # member trying to is demonstrable too (Signal's default is "all").
+        "perm_add_members": "admins",
         "members": ("priya", "ritvik", "sofia", "kenji"),
         "minutes_ago_end": 340,
         "unread_for": ("ritvik",),
@@ -660,6 +663,7 @@ async def create_group_threads(
             avatar_color=spec["avatar_color"],
             created_by=users[spec["admin"]].id,
             disappearing_seconds=0,
+            perm_add_members=spec.get("perm_add_members", "all"),
             last_activity_at=NOW,
         )
         db.add(conversation)

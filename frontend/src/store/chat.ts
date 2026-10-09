@@ -123,6 +123,11 @@ type ChatState = {
   applyStatus: (conversationId: string, messageId: string, status: Message["status"]) => void;
   applyPresence: (userId: string, isOnline: boolean, lastSeenAt: string) => void;
   applyConversation: (summary: ConversationSummary) => void;
+  /** Disappearing messages that expired: drop them everywhere. */
+  removeMessages: (conversationId: string, messageIds: string[]) => void;
+  /** Replace the open thread's detail after a settings change. */
+  setDetail: (detail: ConversationDetail) => void;
+  refreshDetail: (conversationId: string) => Promise<void>;
   takePendingDelivery: () => string[];
 };
 
@@ -165,8 +170,7 @@ export const useChat = create<ChatState>((set, get) => ({
     } catch (error) {
       set({
         listLoading: false,
-        listError:
-          error instanceof ApiError ? error.message : "Could not load conversations.",
+        listError: error instanceof ApiError ? error.message : "Could not load conversations.",
       });
     }
   },
@@ -230,9 +234,7 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!last || last.id.startsWith("pending-")) return;
     await conversationApi.markRead(id, last.id);
     set((state) => ({
-      conversations: state.conversations.map((c) =>
-        c.id === id ? { ...c, unread_count: 0 } : c,
-      ),
+      conversations: state.conversations.map((c) => (c.id === id ? { ...c, unread_count: 0 } : c)),
     }));
   },
 
@@ -418,9 +420,7 @@ export const useChat = create<ChatState>((set, get) => ({
     if (!current) return;
     const updated = await conversationApi.setPrefs(id, { is_pinned: !current.is_pinned });
     set((state) => ({
-      conversations: sortConversations(
-        state.conversations.map((c) => (c.id === id ? updated : c)),
-      ),
+      conversations: sortConversations(state.conversations.map((c) => (c.id === id ? updated : c))),
     }));
   },
 
@@ -590,9 +590,7 @@ export const useChat = create<ChatState>((set, get) => ({
           ...state.threads,
           [conversationId]: {
             ...thread,
-            messages: thread.messages.map((m) =>
-              m.id === messageId ? { ...m, status } : m,
-            ),
+            messages: thread.messages.map((m) => (m.id === messageId ? { ...m, status } : m)),
           },
         },
       };
@@ -620,7 +618,53 @@ export const useChat = create<ChatState>((set, get) => ({
     }));
   },
 
+  removeMessages: (conversationId, messageIds) => {
+    set((state) => {
+      const thread = state.threads[conversationId];
+      return {
+        threads: thread
+          ? {
+              ...state.threads,
+              [conversationId]: {
+                ...thread,
+                messages: thread.messages.filter((m) => !messageIds.includes(m.id)),
+              },
+            }
+          : state.threads,
+        pins: {
+          ...state.pins,
+          [conversationId]: (state.pins[conversationId] ?? []).filter(
+            (m) => !messageIds.includes(m.id),
+          ),
+        },
+      };
+    });
+  },
+
+  setDetail: (detail) => {
+    set((state) => ({
+      detail: state.activeId === detail.id ? detail : state.detail,
+      conversations: sortConversations(
+        state.conversations.map((c) =>
+          c.id === detail.id ? { ...c, ...summaryOf(detail), last_message: c.last_message } : c,
+        ),
+      ),
+    }));
+  },
+
+  refreshDetail: async (conversationId) => {
+    try {
+      const detail = await conversationApi.get(conversationId);
+      get().setDetail(detail);
+    } catch {
+      // Removed from the group, or it no longer exists: keep what we have.
+    }
+  },
+
   applyConversation: (summary) => {
+    // Membership and settings live on the detail, which the summary frame
+    // does not carry, so the open thread refetches it.
+    if (get().activeId === summary.id) void get().refreshDetail(summary.id);
     set((state) => {
       const known = state.conversations.some((c) => c.id === summary.id);
       const next = known
@@ -660,4 +704,24 @@ function previewKind(message: Message): "sticker" | "voice" | null {
   }
   if (first.content_type.startsWith("audio/")) return "voice";
   return null;
+}
+
+/** The summary fields of a detail, for keeping the list row in step. */
+function summaryOf(detail: ConversationDetail): Partial<ConversationSummary> {
+  const {
+    members: _members,
+    description: _description,
+    created_by: _createdBy,
+    permissions: _permissions,
+    group_link: _groupLink,
+    join_requests: _joinRequests,
+    ...summary
+  } = detail;
+  void _members;
+  void _description;
+  void _createdBy;
+  void _permissions;
+  void _groupLink;
+  void _joinRequests;
+  return summary;
 }

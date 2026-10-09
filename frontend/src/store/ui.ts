@@ -13,13 +13,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-export type AppDialog =
-  | null
-  | "shortcuts"
-  | "about"
-  | "debug-log"
-  | "whats-new"
-  | "safety-tips";
+export type AppDialog = null | "shortcuts" | "about" | "debug-log" | "whats-new" | "safety-tips";
 
 export type LocalStory = {
   id: string;
@@ -39,6 +33,21 @@ export type CustomStickerPack = {
   cover: string;
   stickers: CustomSticker[];
   created_at: string;
+};
+
+/** Per-chat notification options from Signal's Notifications page. */
+export type NotifyPrefs = {
+  calls: boolean;
+  mentions: boolean;
+  replies: boolean;
+  unreadReminders: boolean;
+};
+
+export const DEFAULT_NOTIFY: NotifyPrefs = {
+  calls: false,
+  mentions: true,
+  replies: true,
+  unreadReminders: false,
 };
 
 export type CallLink = {
@@ -62,6 +71,11 @@ type UiState = {
    *  "Allow Access" step is not shown again. */
   micAllowed: boolean;
   stickerCreatorOpen: boolean;
+  /** Conversation id -> outgoing bubble colour. "The color is visible to only you." */
+  chatColors: Record<string, string>;
+  notifyPrefs: Record<string, NotifyPrefs>;
+  /** Chats marked unread from the menu, until opened again. */
+  markedUnread: string[];
 
   toggleTabs: () => void;
   setZoom: (zoom: number) => void;
@@ -73,6 +87,10 @@ type UiState = {
   addStickerPack: (pack: CustomStickerPack) => void;
   setMicAllowed: (allowed: boolean) => void;
   setStickerCreatorOpen: (open: boolean) => void;
+  setChatColor: (conversationId: string, color: string | null) => void;
+  resetAllChatColors: () => void;
+  setNotifyPrefs: (conversationId: string, prefs: Partial<NotifyPrefs>) => void;
+  setMarkedUnread: (conversationId: string, unread: boolean) => void;
 };
 
 const ZOOM_STEPS = [0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5];
@@ -97,6 +115,9 @@ export const useUi = create<UiState>()(
       stickerPacks: [],
       micAllowed: false,
       stickerCreatorOpen: false,
+      chatColors: {},
+      notifyPrefs: {},
+      markedUnread: [],
 
       toggleTabs: () => set((state) => ({ tabsHidden: !state.tabsHidden })),
       setZoom: (zoom) => set({ zoom }),
@@ -119,6 +140,31 @@ export const useUi = create<UiState>()(
       addStickerPack: (pack) => set((state) => ({ stickerPacks: [...state.stickerPacks, pack] })),
       setMicAllowed: (micAllowed) => set({ micAllowed }),
       setStickerCreatorOpen: (stickerCreatorOpen) => set({ stickerCreatorOpen }),
+      setChatColor: (conversationId, color) =>
+        set((state) => {
+          const next = { ...state.chatColors };
+          if (color) next[conversationId] = color;
+          else delete next[conversationId];
+          return { chatColors: next };
+        }),
+      resetAllChatColors: () => set({ chatColors: {} }),
+      setNotifyPrefs: (conversationId, prefs) =>
+        set((state) => ({
+          notifyPrefs: {
+            ...state.notifyPrefs,
+            [conversationId]: {
+              ...DEFAULT_NOTIFY,
+              ...state.notifyPrefs[conversationId],
+              ...prefs,
+            },
+          },
+        })),
+      setMarkedUnread: (conversationId, unread) =>
+        set((state) => ({
+          markedUnread: unread
+            ? [...new Set([...state.markedUnread, conversationId])]
+            : state.markedUnread.filter((id) => id !== conversationId),
+        })),
     }),
     {
       name: "signal-ui",
@@ -133,6 +179,9 @@ export const useUi = create<UiState>()(
         callLinks: state.callLinks,
         stickerPacks: state.stickerPacks,
         micAllowed: state.micAllowed,
+        chatColors: state.chatColors,
+        notifyPrefs: state.notifyPrefs,
+        markedUnread: state.markedUnread,
       }),
     },
   ),

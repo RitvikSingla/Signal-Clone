@@ -186,3 +186,54 @@ async def conversation_updated(db: AsyncSession, conversation_id: str) -> None:
                 "conversation": summary.model_dump(mode="json"),
             },
         )
+
+
+async def system_messages(
+    db: AsyncSession, conversation_id: str, also_notify: list[str] | None = None
+) -> None:
+    """Push the group updates a service queued on this session (see
+    conversation_service.add_system_message) to everyone in the thread, plus
+    anyone just removed, so open threads show "You added..." live."""
+    from app.services import message_service
+
+    ids = db.info.pop("system_messages", [])
+    if not ids:
+        return
+    members = set(await active_member_ids(db, conversation_id)) | set(also_notify or [])
+    for message_id in ids:
+        try:
+            message = await message_service.load_out(db, message_id)
+        except conversation_service.ConversationError:
+            continue
+        await hub.send_to_users(
+            list(members),
+            {
+                "type": ServerEvent.MESSAGE_NEW,
+                "conversation_id": message.conversation_id,
+                "message": message.model_dump(mode="json"),
+            },
+        )
+    for extra in also_notify or []:
+        summary = await conversation_service.load_summary_for(db, extra, conversation_id)
+        if summary is not None:
+            await hub.send_to_user(
+                extra,
+                {
+                    "type": ServerEvent.CONVERSATION_UPDATED,
+                    "conversation": summary.model_dump(mode="json"),
+                },
+            )
+
+
+async def messages_expired(db: AsyncSession, expired: dict[str, list[str]]) -> None:
+    for conversation_id, message_ids in expired.items():
+        members = await active_member_ids(db, conversation_id)
+        await hub.send_to_users(
+            members,
+            {
+                "type": ServerEvent.MESSAGE_EXPIRED,
+                "conversation_id": conversation_id,
+                "message_ids": message_ids,
+            },
+        )
+        await conversation_updated(db, conversation_id)

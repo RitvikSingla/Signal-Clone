@@ -6,6 +6,7 @@ Errors are raised as ConversationError and translated at the edge.
 
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone
 
 from sqlalchemy import Select, func, inspect, or_, select
@@ -16,8 +17,10 @@ from app.models import (
     Conversation,
     ConversationMember,
     ConversationType,
+    GroupJoinRequest,
     MemberRole,
     Message,
+    MessageHide,
     MessageType,
     User,
     build_dm_key,
@@ -25,6 +28,10 @@ from app.models import (
 from app.schemas.conversation import (
     ConversationDetail,
     ConversationSummary,
+    GroupLinkOut,
+    GroupPermissions,
+    JoinPreviewOut,
+    JoinRequestOut,
     MemberOut,
 )
 from app.schemas.common import UserPublic
@@ -86,6 +93,9 @@ async def _unread_counts(
             Message.deleted_at.is_(None),
             Message.sender_id.is_not(None),
             Message.sender_id != user_id,
+            # Group updates carry their actor as sender but are not "new
+            # messages"; Signal does not count them toward the badge.
+            Message.type != MessageType.SYSTEM,
             or_(cursor.id.is_(None), Message.created_at > cursor.created_at),
         )
         .group_by(ConversationMember.conversation_id)
@@ -161,6 +171,9 @@ def build_summary(
         avatar_color = peer.avatar_color if peer else "A200"
 
     muted = membership.muted_until is not None and membership.muted_until > _now()
+    can_send = membership.left_at is None and conversation.ended_at is None
+    if conversation.type == ConversationType.GROUP and conversation.perm_send_messages == "admins":
+        can_send = can_send and membership.role == MemberRole.ADMIN
 
     return ConversationSummary(
         id=conversation.id,
@@ -177,14 +190,21 @@ def build_summary(
         is_archived=membership.is_archived,
         is_muted=muted,
         disappearing_seconds=conversation.disappearing_seconds,
+        ended_at=conversation.ended_at,
+        can_send=can_send,
         last_activity_at=conversation.last_activity_at,
     )
 
 
 def _build_detail(
-    conversation: Conversation, membership: ConversationMember, unread: int
+    conversation: Conversation,
+    membership: ConversationMember,
+    unread: int,
+    join_requests: list[GroupJoinRequest] | None = None,
 ) -> ConversationDetail:
     summary = build_summary(conversation, membership, unread)
+    is_group = conversation.type == ConversationType.GROUP
+    is_admin = membership.role == MemberRole.ADMIN
     members = [
         MemberOut(
             user=UserPublic.model_validate(m.user),
@@ -192,6 +212,7 @@ def _build_detail(
             joined_at=m.joined_at,
             left_at=m.left_at,
             is_active=m.left_at is None,
+            label=m.label,
         )
         for m in sorted(
             conversation.members,
@@ -203,6 +224,31 @@ def _build_detail(
         description=conversation.description,
         created_by=conversation.created_by,
         members=members,
+        permissions=_permissions(conversation) if is_group else None,
+        group_link=(
+            GroupLinkOut(
+                enabled=conversation.link_enabled,
+                requires_approval=conversation.link_requires_approval,
+                token=conversation.link_token if is_admin else None,
+            )
+            if is_group
+            else None
+        ),
+        join_requests=[
+            JoinRequestOut(user=UserPublic.model_validate(r.user), created_at=r.created_at)
+            for r in (join_requests or [])
+        ]
+        if is_admin
+        else [],
+    )
+
+
+def _permissions(conversation: Conversation) -> GroupPermissions:
+    return GroupPermissions(
+        add_members=conversation.perm_add_members,
+        edit_info=conversation.perm_edit_info,
+        send_messages=conversation.perm_send_messages,
+        member_labels=conversation.perm_member_labels,
     )
 
 
@@ -225,6 +271,21 @@ async def require_membership(
     if membership is None or (active_only and membership.left_at is not None):
         raise ConversationError("Conversation not found.", 404)
     return membership
+
+
+def require_allowed(
+    conversation: Conversation, membership: ConversationMember, setting: str, action: str
+) -> None:
+    """Enforce one of the four group permissions ("all" or "admins")."""
+    if conversation.type != ConversationType.GROUP:
+        return
+    if setting == "admins" and membership.role != MemberRole.ADMIN:
+        raise ConversationError(f"Only admins can {action}.", 403)
+
+
+def require_active_group(conversation: Conversation) -> None:
+    if conversation.ended_at is not None:
+        raise ConversationError("This group has ended.", 409)
 
 
 async def require_admin(
@@ -307,7 +368,19 @@ async def get_conversation(
     unread = (await _unread_counts(db, user.id, [conversation_id])).get(
         conversation_id, 0
     )
-    return _build_detail(conversation, membership, unread)
+    requests: list[GroupJoinRequest] = []
+    if conversation.type == ConversationType.GROUP and membership.role == MemberRole.ADMIN:
+        requests = list(
+            (
+                await db.scalars(
+                    select(GroupJoinRequest)
+                    .where(GroupJoinRequest.conversation_id == conversation_id)
+                    .options(selectinload(GroupJoinRequest.user))
+                    .order_by(GroupJoinRequest.created_at)
+                )
+            ).all()
+        )
+    return _build_detail(conversation, membership, unread, requests)
 
 
 async def load_summary_for(
@@ -344,22 +417,35 @@ async def load_summary_for(
 
 
 async def add_system_message(
-    db: AsyncSession, conversation: Conversation, text: str
+    db: AsyncSession,
+    conversation: Conversation,
+    text: str,
+    *,
+    actor: User | None = None,
+    event: str = "group",
 ) -> Message:
-    """Membership and settings changes are recorded in the thread itself."""
+    """Membership and settings changes are recorded in the thread itself.
+
+    With an actor, the body is the predicate only ("created the group.") and
+    the actor is stored as the sender, so each reader's client can say
+    "You created the group." or "Ritvik created the group." The id is queued
+    on the session so the router can push it to members after commit.
+    """
     message = Message(
         conversation_id=conversation.id,
-        sender_id=None,
+        sender_id=actor.id if actor else None,
         type=MessageType.SYSTEM,
+        event=event if actor else None,
         body=text,
         envelope_hash="",
-        client_id=f"sys-{_now().timestamp():.6f}",
+        client_id=f"sys-{secrets.token_hex(8)}",
         created_at=_now(),
     )
     db.add(message)
     await db.flush()
     conversation.last_message_id = message.id
     conversation.last_activity_at = message.created_at
+    db.info.setdefault("system_messages", []).append(message.id)
     return message
 
 
@@ -407,12 +493,15 @@ async def create_group(
     name: str,
     member_ids: list[str],
     description: str | None,
+    avatar_url: str | None = None,
+    disappearing_seconds: int = 0,
 ) -> ConversationDetail:
     unique_ids = {mid for mid in member_ids if mid != user.id}
-    if not unique_ids:
-        raise ConversationError("Add at least one other person.", 400)
-
-    found = (await db.scalars(select(User).where(User.id.in_(unique_ids)))).all()
+    found = (
+        (await db.scalars(select(User).where(User.id.in_(unique_ids)))).all()
+        if unique_ids
+        else []
+    )
     if len(found) != len(unique_ids):
         raise ConversationError("One of those accounts does not exist.", 404)
 
@@ -420,8 +509,10 @@ async def create_group(
         type=ConversationType.GROUP,
         name=name.strip(),
         description=(description or "").strip() or None,
+        avatar_url=avatar_url,
         created_by=user.id,
-        avatar_color="A200",
+        avatar_color=_group_color(name),
+        disappearing_seconds=disappearing_seconds,
         last_activity_at=_now(),
     )
     db.add(conversation)
@@ -445,12 +536,24 @@ async def create_group(
         )
     await db.flush()
 
-    await add_system_message(db, conversation, f"{user.display_name} created the group.")
-    names = ", ".join(sorted(u.display_name for u in found))
-    await add_system_message(db, conversation, f"{user.display_name} added {names}.")
+    await add_system_message(db, conversation, "created the group.", actor=user)
+    if disappearing_seconds:
+        await add_system_message(
+            db,
+            conversation,
+            f"set the disappearing message timer to {_humanise_duration(disappearing_seconds)}.",
+            actor=user,
+            event="timer",
+        )
 
     await db.commit()
     return await get_conversation(db, user, conversation.id)
+
+
+def _group_color(name: str) -> str:
+    """A stable swatch per group name, so new groups are not all grey."""
+    swatches = ("A100", "A110", "A120", "A130", "A140", "A150", "A160", "A170", "A180", "A190")
+    return swatches[sum(map(ord, name)) % len(swatches)]
 
 
 async def update_conversation(
@@ -462,48 +565,66 @@ async def update_conversation(
     description: str | None,
     avatar_color: str | None,
     disappearing_seconds: int | None,
+    avatar_url: str | None = None,
 ) -> ConversationDetail:
-    await require_membership(db, user, conversation_id)
+    membership = await require_membership(db, user, conversation_id)
     conversation = await db.get(Conversation, conversation_id)
     if conversation is None:
         raise ConversationError("Conversation not found.", 404)
+    is_group = conversation.type == ConversationType.GROUP
+    if is_group:
+        require_active_group(conversation)
 
-    if name is not None or description is not None or avatar_color is not None:
-        await require_admin(db, user, conversation)
-        if conversation.type != ConversationType.GROUP:
-            raise ConversationError("A direct conversation has no name.", 400)
-        if name is not None:
-            conversation.name = name.strip()
-            await add_system_message(
-                db, conversation, f"{user.display_name} changed the group name."
-            )
-        if description is not None:
-            conversation.description = description.strip() or None
-        if avatar_color is not None:
-            conversation.avatar_color = avatar_color
+    editing_info = any(
+        v is not None for v in (name, description, avatar_color, avatar_url)
+    )
+    if editing_info or (is_group and disappearing_seconds is not None):
+        # In a group, name, photo, description and timer all fall under
+        # "Who can edit group info".
+        require_allowed(conversation, membership, conversation.perm_edit_info, "edit group info")
+    if editing_info and not is_group:
+        raise ConversationError("A direct conversation has no name.", 400)
 
-    # Anyone in the thread may change the timer, which matches Signal.
-    if disappearing_seconds is not None:
-        conversation.disappearing_seconds = disappearing_seconds
-        label = (
-            "off"
-            if disappearing_seconds == 0
-            else _humanise_duration(disappearing_seconds)
-        )
+    if name is not None and name.strip() != conversation.name:
+        conversation.name = name.strip()
         await add_system_message(
-            db, conversation, f"{user.display_name} set disappearing messages to {label}."
+            db, conversation, f"changed the group name to “{conversation.name}”.", actor=user
         )
+    if description is not None and (description.strip() or None) != conversation.description:
+        conversation.description = description.strip() or None
+        await add_system_message(db, conversation, "changed the group description.", actor=user)
+    if avatar_color is not None:
+        conversation.avatar_color = avatar_color
+    if avatar_url is not None:
+        conversation.avatar_url = avatar_url or None
+        await add_system_message(db, conversation, "changed the group avatar.", actor=user)
+
+    if disappearing_seconds is not None and disappearing_seconds != conversation.disappearing_seconds:
+        conversation.disappearing_seconds = disappearing_seconds
+        text = (
+            "disabled disappearing messages."
+            if disappearing_seconds == 0
+            else "set the disappearing message timer to "
+            f"{_humanise_duration(disappearing_seconds)}."
+        )
+        await add_system_message(db, conversation, text, actor=user, event="timer")
 
     await db.commit()
     return await get_conversation(db, user, conversation_id)
 
 
 def _humanise_duration(seconds: int) -> str:
-    for unit_seconds, label in ((604800, "week"), (86400, "day"), (3600, "hour"), (60, "minute")):
+    for unit_seconds, label in (
+        (604800, "week"),
+        (86400, "day"),
+        (3600, "hour"),
+        (60, "minute"),
+        (1, "second"),
+    ):
         if seconds % unit_seconds == 0:
             count = seconds // unit_seconds
             return f"{count} {label}{'s' if count > 1 else ''}"
-    return f"{seconds} seconds"
+    return f"{seconds} seconds"  # pragma: no cover - the loop always returns
 
 
 async def update_prefs(
@@ -514,13 +635,15 @@ async def update_prefs(
     is_pinned: bool | None,
     is_archived: bool | None,
     muted_until: datetime | None,
+    set_mute: bool = False,
 ) -> ConversationSummary:
     membership = await require_membership(db, user, conversation_id)
     if is_pinned is not None:
         membership.is_pinned = is_pinned
     if is_archived is not None:
         membership.is_archived = is_archived
-    if muted_until is not None:
+    # set_mute distinguishes "unmute" (explicit null) from "leave alone".
+    if set_mute or muted_until is not None:
         membership.muted_until = muted_until
     await db.commit()
 
@@ -538,7 +661,9 @@ async def add_members(
         raise ConversationError("Conversation not found.", 404)
     if conversation.type != ConversationType.GROUP:
         raise ConversationError("You cannot add people to a direct conversation.", 400)
-    await require_admin(db, user, conversation)
+    require_active_group(conversation)
+    membership = await require_membership(db, user, conversation_id)
+    require_allowed(conversation, membership, conversation.perm_add_members, "add members")
 
     added: list[str] = []
     for user_id in dict.fromkeys(user_ids):
@@ -569,10 +694,19 @@ async def add_members(
                 )
             )
         added.append(target.display_name)
+        # A pending request is answered by being added.
+        pending = await db.scalar(
+            select(GroupJoinRequest).where(
+                GroupJoinRequest.conversation_id == conversation_id,
+                GroupJoinRequest.user_id == user_id,
+            )
+        )
+        if pending is not None:
+            await db.delete(pending)
 
     if added:
         await add_system_message(
-            db, conversation, f"{user.display_name} added {', '.join(sorted(added))}."
+            db, conversation, f"added {_names(sorted(added))}.", actor=user
         )
     await db.commit()
     return await get_conversation(db, user, conversation_id)
@@ -604,9 +738,7 @@ async def remove_member(
     membership.left_at = _now()
     target = await db.get(User, target_id)
     await add_system_message(
-        db,
-        conversation,
-        f"{user.display_name} removed {target.display_name if target else 'someone'}.",
+        db, conversation, f"removed {target.display_name if target else 'someone'}.", actor=user
     )
     await db.commit()
     return await get_conversation(db, user, conversation_id)
@@ -645,13 +777,13 @@ async def change_role(
 
     membership.role = role
     target = await db.get(User, target_id)
-    verb = "made" if role == MemberRole.ADMIN else "removed"
-    suffix = "an admin" if role == MemberRole.ADMIN else "as an admin"
-    await add_system_message(
-        db,
-        conversation,
-        f"{user.display_name} {verb} {target.display_name if target else 'someone'} {suffix}.",
+    who = target.display_name if target else "someone"
+    text = (
+        f"made {who} an admin."
+        if role == MemberRole.ADMIN
+        else f"revoked admin privileges from {who}."
     )
+    await add_system_message(db, conversation, text, actor=user)
     await db.commit()
     return await get_conversation(db, user, conversation_id)
 
@@ -689,7 +821,7 @@ async def leave(db: AsyncSession, user: User, conversation_id: str) -> None:
         if successor is not None:
             successor.role = MemberRole.ADMIN
 
-    await add_system_message(db, conversation, f"{user.display_name} left the group.")
+    await add_system_message(db, conversation, "left the group.", actor=user)
     await db.commit()
 
 
@@ -745,3 +877,268 @@ async def mark_read(
 
     await db.commit()
     return membership, touched
+
+
+def _names(names: list[str]) -> str:
+    if len(names) <= 1:
+        return "".join(names)
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+async def _group_for_admin(
+    db: AsyncSession, user: User, conversation_id: str
+) -> Conversation:
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None or conversation.type != ConversationType.GROUP:
+        raise ConversationError("Conversation not found.", 404)
+    await require_admin(db, user, conversation)
+    return conversation
+
+
+# ---------------------------------------------------------------------------
+# Group settings: permissions, link, labels, ending
+# ---------------------------------------------------------------------------
+
+PERMISSION_TEXT = {
+    "add_members": "add members",
+    "edit_info": "edit group info",
+    "send_messages": "send messages",
+    "member_labels": "add member labels",
+}
+
+
+async def update_permissions(
+    db: AsyncSession, user: User, conversation_id: str, changes: dict[str, str]
+) -> ConversationDetail:
+    conversation = await _group_for_admin(db, user, conversation_id)
+    require_active_group(conversation)
+    for key, value in changes.items():
+        column = f"perm_{key}"
+        if getattr(conversation, column) == value:
+            continue
+        setattr(conversation, column, value)
+        who = "Only admins" if value == "admins" else "All members"
+        await add_system_message(
+            db,
+            conversation,
+            f"changed who can {PERMISSION_TEXT[key]} to “{who}”.",
+            actor=user,
+        )
+    await db.commit()
+    return await get_conversation(db, user, conversation_id)
+
+
+async def update_group_link(
+    db: AsyncSession,
+    user: User,
+    conversation_id: str,
+    *,
+    enabled: bool | None,
+    requires_approval: bool | None,
+    reset: bool,
+) -> ConversationDetail:
+    conversation = await _group_for_admin(db, user, conversation_id)
+    require_active_group(conversation)
+
+    if reset:
+        conversation.link_token = secrets.token_urlsafe(32)
+        await add_system_message(db, conversation, "reset the group link.", actor=user)
+
+    if enabled is not None and enabled != conversation.link_enabled:
+        conversation.link_enabled = enabled
+        if enabled:
+            if conversation.link_token is None:
+                conversation.link_token = secrets.token_urlsafe(32)
+            if requires_approval is not None:
+                conversation.link_requires_approval = requires_approval
+            state = "enabled" if conversation.link_requires_approval else "disabled"
+            await add_system_message(
+                db,
+                conversation,
+                f"turned on the group link with admin approval {state}.",
+                actor=user,
+            )
+        else:
+            await add_system_message(db, conversation, "turned off the group link.", actor=user)
+    elif requires_approval is not None and requires_approval != conversation.link_requires_approval:
+        conversation.link_requires_approval = requires_approval
+        verb = "enabled" if requires_approval else "disabled"
+        await add_system_message(
+            db, conversation, f"{verb} admin approval for the group link.", actor=user
+        )
+
+    await db.commit()
+    return await get_conversation(db, user, conversation_id)
+
+
+async def set_label(
+    db: AsyncSession, user: User, conversation_id: str, label: str | None
+) -> ConversationDetail:
+    membership = await require_membership(db, user, conversation_id)
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None or conversation.type != ConversationType.GROUP:
+        raise ConversationError("Member labels are for groups.", 400)
+    require_active_group(conversation)
+    require_allowed(conversation, membership, conversation.perm_member_labels, "add member labels")
+    membership.label = (label or "").strip() or None
+    await db.commit()
+    return await get_conversation(db, user, conversation_id)
+
+
+async def end_group(db: AsyncSession, user: User, conversation_id: str) -> ConversationDetail:
+    """Admin only. Members keep their history but nobody can send again."""
+    conversation = await _group_for_admin(db, user, conversation_id)
+    require_active_group(conversation)
+    conversation.ended_at = _now()
+    conversation.link_enabled = False
+    await add_system_message(db, conversation, "ended the group.", actor=user)
+    await db.commit()
+    return await get_conversation(db, user, conversation_id)
+
+
+async def clear_history(db: AsyncSession, user: User, conversation_id: str) -> int:
+    """Delete for me, for every message in the thread. Others keep theirs."""
+    await require_membership(db, user, conversation_id, active_only=False)
+    already = select(MessageHide.message_id).where(MessageHide.user_id == user.id)
+    ids = (
+        await db.scalars(
+            select(Message.id).where(
+                Message.conversation_id == conversation_id, Message.id.not_in(already)
+            )
+        )
+    ).all()
+    for message_id in ids:
+        db.add(MessageHide(message_id=message_id, user_id=user.id))
+    await db.commit()
+    return len(ids)
+
+
+# ---------------------------------------------------------------------------
+# Joining through a group link
+# ---------------------------------------------------------------------------
+
+
+async def _group_by_token(db: AsyncSession, token: str) -> Conversation:
+    conversation = await db.scalar(
+        _loaded(select(Conversation).where(Conversation.link_token == token))
+    )
+    if (
+        conversation is None
+        or not conversation.link_enabled
+        or conversation.ended_at is not None
+    ):
+        raise ConversationError("This group link is no longer valid.", 404)
+    return conversation
+
+
+async def preview_join(db: AsyncSession, user: User, token: str) -> JoinPreviewOut:
+    conversation = await _group_by_token(db, token)
+    active = [m for m in conversation.members if m.left_at is None]
+    if any(m.user_id == user.id for m in active):
+        status = "member"
+    else:
+        pending = await db.scalar(
+            select(GroupJoinRequest).where(
+                GroupJoinRequest.conversation_id == conversation.id,
+                GroupJoinRequest.user_id == user.id,
+            )
+        )
+        status = "requested" if pending else "none"
+    return JoinPreviewOut(
+        conversation_id=conversation.id,
+        title=conversation.name or "Group",
+        avatar_url=conversation.avatar_url,
+        avatar_color=conversation.avatar_color,
+        member_count=len(active),
+        description=conversation.description,
+        requires_approval=conversation.link_requires_approval,
+        status=status,
+    )
+
+
+async def join_by_link(db: AsyncSession, user: User, token: str) -> tuple[str, str]:
+    """Returns (conversation_id, "joined" | "requested" | "member")."""
+    conversation = await _group_by_token(db, token)
+    existing = await db.scalar(
+        select(ConversationMember).where(
+            ConversationMember.conversation_id == conversation.id,
+            ConversationMember.user_id == user.id,
+        )
+    )
+    if existing is not None and existing.left_at is None:
+        return conversation.id, "member"
+
+    if conversation.link_requires_approval:
+        pending = await db.scalar(
+            select(GroupJoinRequest).where(
+                GroupJoinRequest.conversation_id == conversation.id,
+                GroupJoinRequest.user_id == user.id,
+            )
+        )
+        if pending is None:
+            db.add(GroupJoinRequest(conversation_id=conversation.id, user_id=user.id))
+            await db.commit()
+        return conversation.id, "requested"
+
+    if existing is not None:
+        existing.left_at = None
+        existing.joined_at = _now()
+        existing.role = MemberRole.MEMBER
+    else:
+        db.add(
+            ConversationMember(
+                conversation_id=conversation.id, user_id=user.id, role=MemberRole.MEMBER
+            )
+        )
+    await db.flush()
+    await add_system_message(
+        db, conversation, "joined the group via the group link.", actor=user
+    )
+    await db.commit()
+    return conversation.id, "joined"
+
+
+async def resolve_request(
+    db: AsyncSession, user: User, conversation_id: str, requester_id: str, approve: bool
+) -> ConversationDetail:
+    conversation = await _group_for_admin(db, user, conversation_id)
+    request = await db.scalar(
+        select(GroupJoinRequest).where(
+            GroupJoinRequest.conversation_id == conversation_id,
+            GroupJoinRequest.user_id == requester_id,
+        )
+    )
+    if request is None:
+        raise ConversationError("That request is no longer waiting.", 404)
+    await db.delete(request)
+
+    requester = await db.get(User, requester_id)
+    name = requester.display_name if requester else "someone"
+    if approve:
+        require_active_group(conversation)
+        existing = await db.scalar(
+            select(ConversationMember).where(
+                ConversationMember.conversation_id == conversation_id,
+                ConversationMember.user_id == requester_id,
+            )
+        )
+        if existing is not None:
+            existing.left_at = None
+            existing.joined_at = _now()
+            existing.role = MemberRole.MEMBER
+        else:
+            db.add(
+                ConversationMember(
+                    conversation_id=conversation_id, user_id=requester_id, role=MemberRole.MEMBER
+                )
+            )
+        await db.flush()
+        await add_system_message(
+            db, conversation, f"approved a request to join the group from {name}.", actor=user
+        )
+    else:
+        await add_system_message(
+            db, conversation, f"denied a request to join the group from {name}.", actor=user
+        )
+    await db.commit()
+    return await get_conversation(db, user, conversation_id)

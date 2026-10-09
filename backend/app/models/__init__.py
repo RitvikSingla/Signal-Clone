@@ -8,7 +8,12 @@ missing from the migration.
 
 from app.db.base import Base
 from app.models.auth import AuthSession, PhoneVerification
-from app.models.conversation import Conversation, ConversationMember, build_dm_key
+from app.models.conversation import (
+    Conversation,
+    ConversationMember,
+    GroupJoinRequest,
+    build_dm_key,
+)
 from app.models.enums import (
     AVATAR_COLORS,
     ConversationType,
@@ -35,6 +40,7 @@ __all__ = [
     "Conversation",
     "ConversationMember",
     "ConversationType",
+    "GroupJoinRequest",
     "Device",
     "DevicePlatform",
     "MemberRole",

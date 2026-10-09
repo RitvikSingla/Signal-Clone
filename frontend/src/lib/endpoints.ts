@@ -13,6 +13,8 @@ import type {
   Attachment,
   ConversationSummary,
   DemoAccount,
+  GroupPermissions,
+  JoinPreview,
   Message,
   MessageInfo,
   MessagePage,
@@ -67,6 +69,8 @@ export const conversationApi = {
     name: string;
     member_ids: string[];
     description?: string | null;
+    avatar_url?: string | null;
+    disappearing_seconds?: number;
   }) => api.post<ConversationDetail>("/conversations/group", payload),
 
   update: (
@@ -75,13 +79,40 @@ export const conversationApi = {
       name: string;
       description: string;
       avatar_color: string;
+      avatar_url: string;
       disappearing_seconds: number;
     }>,
   ) => api.patch<ConversationDetail>(`/conversations/${id}`, payload),
 
+  setPermissions: (id: string, payload: Partial<GroupPermissions>) =>
+    api.patch<ConversationDetail>(`/conversations/${id}/permissions`, payload),
+
+  setGroupLink: (
+    id: string,
+    payload: Partial<{ enabled: boolean; requires_approval: boolean; reset: boolean }>,
+  ) => api.patch<ConversationDetail>(`/conversations/${id}/link`, payload),
+
+  setLabel: (id: string, label: string | null) =>
+    api.put<ConversationDetail>(`/conversations/${id}/label`, { label }),
+
+  resolveRequest: (id: string, userId: string, approve: boolean) =>
+    api.post<ConversationDetail>(`/conversations/${id}/requests/${userId}`, { approve }),
+
+  end: (id: string) => api.post<ConversationDetail>(`/conversations/${id}/end`),
+
+  clear: (id: string) => api.post<{ detail: string }>(`/conversations/${id}/clear`),
+
+  previewLink: (token: string) =>
+    api.get<JoinPreview>(`/conversations/group-link/${encodeURIComponent(token)}`),
+
+  joinLink: (token: string) =>
+    api.post<{ conversation_id: string; status: "joined" | "requested" | "member" }>(
+      `/conversations/group-link/${encodeURIComponent(token)}`,
+    ),
+
   setPrefs: (
     id: string,
-    payload: Partial<{ is_pinned: boolean; is_archived: boolean; muted_until: string }>,
+    payload: Partial<{ is_pinned: boolean; is_archived: boolean; muted_until: string | null }>,
   ) => api.patch<ConversationSummary>(`/conversations/${id}/prefs`, payload),
 
   markRead: (id: string, last_message_id: string | null = null) =>
